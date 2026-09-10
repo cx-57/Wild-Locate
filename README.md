@@ -19,7 +19,7 @@ For a launch without a console window, run `./Start-WildLocate.ps1`. It explicit
 
 On macOS/Linux, use `.venv/bin/python` in place of `.\.venv\Scripts\python.exe`.
 
-Choose Bobcat, Fisher, North American River Otter, Red Fox, or Coyote; enter latitude and longitude in decimal degrees; then select **Analyze Habitat**. Example coordinates are inputs only: loading an example never creates a prediction. The app makes no network requests.
+Type Bobcat, Fisher, North American River Otter, Red Fox, or Coyote; enter latitude and longitude in decimal degrees; then select **Analyze Habitat**. Suggestions match any part of a species name, ignoring capitalization. Only the five trained species can be analyzed. Example coordinates are inputs only: loading an example never creates a prediction. The app makes no network requests.
 
 The result presents the backend's category and percentile, relative score, model, training-observation count, and location. Expand **Environmental Conditions** for readable measurements, or export the completed assessment as JSON with its full-precision values and interpretation. Editing any input clears the previous assessment.
 

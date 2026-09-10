@@ -14,7 +14,7 @@ if __package__ in {None, ""}:
 from PyQt6.QtCore import QIODevice, QSaveFile, Qt, QTimer
 from PyQt6.QtGui import QFont, QFontDatabase, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QApplication, QBoxLayout, QFileDialog, QFrame, QGridLayout,
+    QApplication, QBoxLayout, QCompleter, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QLineEdit, QMainWindow, QProgressBar, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
@@ -23,7 +23,7 @@ from src.catalog import SUPPORTED_SPECIES
 from web.client import PredictionClient
 from web.formatting import coordinates, feature_display, ordinal
 from web.theme import STYLESHEET
-from web.widgets import BrandMark, ContourArt, Disclosure, SpeciesCombo, SuitabilityGauge, app_icon, divider, label
+from web.widgets import BrandMark, ContourArt, Disclosure, SuitabilityGauge, app_icon, divider, label
 
 
 def button(text, role="", callback=None):
@@ -105,7 +105,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(shell)
         self._responsive_layout()
 
-        self.species.currentTextChanged.connect(self._inputs_changed)
+        self.species.textChanged.connect(self._inputs_changed)
+        self.species.returnPressed.connect(self.analyze)
         for field in (self.latitude, self.longitude):
             field.textChanged.connect(self._inputs_changed)
             field.returnPressed.connect(self.analyze)
@@ -117,6 +118,7 @@ class MainWindow(QMainWindow):
         self.setTabOrder(self.latitude, self.longitude)
         self.setTabOrder(self.longitude, self.analyze_button)
         self.species.setFocus(Qt.FocusReason.OtherFocusReason)
+        self.species.selectAll()
 
     def _build_nav(self):
         nav = QWidget()
@@ -159,13 +161,21 @@ class MainWindow(QMainWindow):
         layout.addWidget(label("Explore a location", "heading"))
         layout.addWidget(label("One species. One place. A new perspective.", "muted", True))
         layout.addSpacing(3)
-        layout.addWidget(label("01   SELECT A SPECIES", "step"))
-        self.species = SpeciesCombo()
-        self.species.addItems(SUPPORTED_SPECIES)
-        self.species.setCurrentText("North American River Otter")
+        species_label = label("01   ENTER A SPECIES", "step")
+        layout.addWidget(species_label)
+        self.species = QLineEdit("North American River Otter")
+        species_label.setBuddy(self.species)
         self.species.setAccessibleName("Species")
-        self.species.setMaxVisibleItems(5)
+        self.species.setPlaceholderText("Type a species name…")
+        self.species.setMaxLength(100)
+        self.species.setClearButtonEnabled(True)
+        self.species.setToolTip("Supported species: " + ", ".join(SUPPORTED_SPECIES))
+        completer = QCompleter(list(SUPPORTED_SPECIES), self.species)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.species.setCompleter(completer)
         layout.addWidget(self.species)
+        layout.addWidget(label("Five trained species · start typing for suggestions.", "small", True))
         layout.addSpacing(3)
         layout.addWidget(label("02   CHOOSE A LOCATION", "step"))
         coordinate_layout = QHBoxLayout()
@@ -335,14 +345,14 @@ class MainWindow(QMainWindow):
             self._responsive_layout()
 
     def _use_example(self):
-        lat, lon = (42.28, -71.35) if self.species.currentText() == "Red Fox" else (42.3718, -72.2820)
+        lat, lon = (42.28, -71.35) if self.species.text().strip().casefold() == "red fox" else (42.3718, -72.2820)
         self.latitude.setText(f"{lat:.4f}")
         self.longitude.setText(f"{lon:.4f}")
         self.input_note.setText("Example coordinates loaded. Ready to analyze.")
 
     def _inputs_changed(self):
         self.error.hide()
-        for field in (self.latitude, self.longitude):
+        for field in (self.species, self.latitude, self.longitude):
             field.setProperty("invalid", False)
             field.style().unpolish(field)
             field.style().polish(field)
@@ -381,6 +391,15 @@ class MainWindow(QMainWindow):
     def analyze(self):
         if self.client.busy:
             return
+        species = next((name for name in SUPPORTED_SPECIES if name.casefold() == self.species.text().strip().casefold()), None)
+        if species is None:
+            self.species.setProperty("invalid", True)
+            self.species.style().unpolish(self.species)
+            self.species.style().polish(self.species)
+            self.error.setText("Enter a supported species: " + ", ".join(SUPPORTED_SPECIES) + ".")
+            self.error.show()
+            self.species.setFocus()
+            return
         values = self._read_coordinates()
         if values is None:
             return
@@ -395,7 +414,7 @@ class MainWindow(QMainWindow):
         self._started_at = time.monotonic()
         self._update_elapsed()
         self.timer.start()
-        self.client.analyze(self.species.currentText(), *values)
+        self.client.analyze(species, *values)
 
     def _set_busy(self, busy: bool):
         for widget in (self.species, self.latitude, self.longitude, self.example_button, self.analyze_button):

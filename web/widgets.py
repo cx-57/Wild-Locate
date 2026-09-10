@@ -4,7 +4,7 @@ import math
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap, QIcon
-from PyQt6.QtWidgets import QComboBox, QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
 
 
 def label(text: str, role: str = "", wrap: bool = False) -> QLabel:
@@ -55,21 +55,6 @@ class BrandMark(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         draw_mark(painter, 36)
-
-
-class SpeciesCombo(QComboBox):
-    def wheelEvent(self, event):
-        # Scrolling the page should not silently change the chosen species.
-        event.ignore()
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor("#52715b"), 1.5))
-        x, y = self.width() - 20, self.height() / 2
-        painter.drawLine(QPointF(x - 4, y - 2), QPointF(x, y + 2))
-        painter.drawLine(QPointF(x, y + 2), QPointF(x + 4, y - 2))
 
 
 class ContourArt(QWidget):

@@ -36,7 +36,7 @@ def test_opens_without_prediction(window):
     assert window.stack.currentWidget() is window.empty_page
     assert window.environment.isHidden()
     assert window.export_button.isHidden()
-    assert window.species.count() == 5
+    assert window.species.completer().model().rowCount() == 5
 
 
 def test_windowless_launcher_uses_python_with_pipes(app, monkeypatch):
@@ -92,7 +92,7 @@ def test_worker_crash_restores_controls(window, monkeypatch):
 
 
 def test_example_coordinates_and_disclosures(window):
-    window.species.setCurrentText("Red Fox")
+    window.species.setText("Red Fox")
     window.example_button.click()
     assert window.latitude.text() == "42.2800"
     assert window.longitude.text() == "-71.3500"
@@ -110,6 +110,34 @@ def test_changing_inputs_invalidates_previous_assessment(window):
     assert window.result is None
     assert window.stack.currentWidget() is window.empty_page
     assert window.export_button.isHidden()
+
+
+def test_typed_species_is_normalized_before_dispatch(window, monkeypatch):
+    dispatch = Mock()
+    monkeypatch.setattr(window.client, "analyze", dispatch)
+    window.species.selectAll()
+    QTest.keyClicks(window.species, " red fox ")
+    window.analyze()
+    dispatch.assert_called_once_with("Red Fox", 42.3718, -72.2820)
+
+
+@pytest.mark.parametrize("species", ["", "   ", "Wolf", "River"])
+def test_unsupported_typed_species_never_starts_worker(window, species):
+    window.species.setText(species)
+    window.analyze()
+    assert window.species.property("invalid") is True
+    assert "supported species" in window.error.text()
+    assert not window.client.busy
+
+
+def test_species_suggestions_match_within_names(window):
+    completer = window.species.completer()
+    completer.setCompletionPrefix("otter")
+    assert completer.completionCount() == 1
+    assert completer.currentCompletion() == "North American River Otter"
+    window.result = object()
+    window.species.setText("Bobcat")
+    assert window.result is None
 
 
 def test_narrow_layout_has_no_horizontal_overflow(window, app):
