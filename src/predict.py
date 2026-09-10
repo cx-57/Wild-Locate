@@ -19,8 +19,9 @@ if __package__ in {None, ""}:
 
 from src.features.extract import extract_features
 
-MODEL_DIR = Path("data/processed/models")
-FEATURES_DIR = Path("data/processed/features/species")
+ROOT = Path(__file__).resolve().parents[1]
+MODEL_DIR = ROOT / "data/processed/models"
+FEATURES_DIR = ROOT / "data/processed/features/species"
 
 
 def species_slug(species: str) -> str:
@@ -158,6 +159,53 @@ def print_results(
         print(f"{name}: {feature_values[name]}")
 
 
+def predict_species(species: str, latitude: float, longitude: float) -> dict[str, Any]:
+    """Run the existing prediction calculation for the CLI, API, and desktop app."""
+    species = species.strip()
+    if not species:
+        raise ValueError("Species name cannot be empty.")
+
+    validate_lat_lon(latitude, longitude)
+
+    model, metrics = load_model_and_metadata(species)
+
+    predictor_names = metrics.get("predictor_names")
+    if not predictor_names:
+        raise RuntimeError(
+            f"Saved model metadata for {species} does not include predictor names. "
+            "Please restore the model metadata."
+        )
+
+    extracted_features = extract_features(latitude, longitude)
+
+    prediction_frame = build_prediction_frame(extracted_features, predictor_names)
+
+    if not hasattr(model, "predict_proba"):
+        raise RuntimeError(
+            f"Saved model for {species} does not support predict_proba, so a relative suitability score cannot be computed."
+        )
+
+    predicted_score = float(model.predict_proba(prediction_frame)[0, 1])
+    if not np.isfinite(predicted_score):
+        raise RuntimeError("Prediction failed: the computed suitability score is not finite.")
+
+    comparison_scores, _ = load_comparison_scores(model, predictor_names, species)
+    percentile = percentile_of_score(predicted_score, comparison_scores)
+    category = category_for_percentile(percentile)
+
+    return {
+        "species": species,
+        "latitude": latitude,
+        "longitude": longitude,
+        "score": predicted_score,
+        "percentile": percentile,
+        "category": category,
+        "model": format_model_name(metrics.get("selected_model", "Unknown Model")),
+        "training_observations": int(metrics.get("presence_count", 0)),
+        "features": {name: float(extracted_features[name]) for name in predictor_names},
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Predict relative habitat suitability for a species at a Massachusetts location.",
@@ -166,59 +214,18 @@ def main() -> None:
     parser.add_argument("--lat", required=True, type=float, help="Latitude in EPSG:4326.")
     parser.add_argument("--lon", required=True, type=float, help="Longitude in EPSG:4326.")
     args = parser.parse_args()
-
-    species = args.species.strip()
-    if not species:
-        raise ValueError("Species name cannot be empty.")
-
-    validate_lat_lon(args.lat, args.lon)
-
-    try:
-        model, metrics = load_model_and_metadata(species)
-    except FileNotFoundError as exc:
-        raise SystemExit(str(exc)) from exc
-
-    predictor_names = metrics.get("predictor_names")
-    if not predictor_names:
-        raise SystemExit(
-            f"Saved model metadata for {species} does not include predictor names. "
-            "Please retrain the model with the current training pipeline."
-        )
-
-    try:
-        extracted_features = extract_features(args.lat, args.lon)
-    except Exception as exc:
-        raise SystemExit(
-            f"Prediction refused: unable to extract environmental features for ({args.lat}, {args.lon}).\n"
-            f"Reason: {exc}"
-        ) from exc
-
-    prediction_frame = build_prediction_frame(extracted_features, predictor_names)
-
-    if not hasattr(model, "predict_proba"):
-        raise SystemExit(
-            f"Saved model for {species} does not support predict_proba, so a relative suitability score cannot be computed."
-        )
-
-    predicted_score = float(model.predict_proba(prediction_frame)[0, 1])
-    if not np.isfinite(predicted_score):
-        raise SystemExit("Prediction failed: the computed suitability score is not finite.")
-
-    comparison_scores, _ = load_comparison_scores(model, predictor_names, species)
-    percentile = percentile_of_score(predicted_score, comparison_scores)
-    category = category_for_percentile(percentile)
-
+    result = predict_species(args.species, args.lat, args.lon)
     print_results(
-        species=species,
-        latitude=args.lat,
-        longitude=args.lon,
-        score=predicted_score,
-        percentile=percentile,
-        category=category,
-        model_name=metrics.get("selected_model", "Unknown Model"),
-        presence_count=int(metrics.get("presence_count", 0)),
-        feature_values=extracted_features,
-        predictor_names=predictor_names,
+        species=result["species"],
+        latitude=result["latitude"],
+        longitude=result["longitude"],
+        score=result["score"],
+        percentile=result["percentile"],
+        category=result["category"],
+        model_name=result["model"],
+        presence_count=result["training_observations"],
+        feature_values=result["features"],
+        predictor_names=list(result["features"]),
     )
 
 
