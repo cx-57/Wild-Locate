@@ -20,7 +20,13 @@ class PredictionClient(QObject):
         super().__init__(parent)
         self.process = QProcess(self)
         self.process.setWorkingDirectory(str(ROOT))
-        self.process.setProgram(sys.executable)
+        interpreter = Path(sys.executable)
+        # A .pyw launch uses pythonw, whose standard streams may be absent.
+        # QProcess supplies pipes to the console interpreter without requiring
+        # a terminal window; use the sibling from the same virtual environment.
+        if interpreter.name.lower() == "pythonw.exe":
+            interpreter = interpreter.with_name("python.exe")
+        self.process.setProgram(str(interpreter))
         self.process.setArguments(["-u", "-m", "src.prediction_worker"])
         self.process.started.connect(self._send_pending)
         self.process.readyReadStandardOutput.connect(self._read_output)

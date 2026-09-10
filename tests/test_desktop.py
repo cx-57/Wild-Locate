@@ -10,6 +10,7 @@ from PyQt6.QtCore import QProcess, Qt
 from PyQt6.QtTest import QTest
 
 from web.app import MainWindow, create_application
+from web.client import PredictionClient
 from web.formatting import coordinates, feature_display, ordinal
 
 
@@ -36,6 +37,13 @@ def test_opens_without_prediction(window):
     assert window.environment.isHidden()
     assert window.export_button.isHidden()
     assert window.species.count() == 5
+
+
+def test_windowless_launcher_uses_python_with_pipes(app, monkeypatch):
+    monkeypatch.setattr("sys.executable", "C:/project/.venv/Scripts/pythonw.exe")
+    client = PredictionClient()
+    assert client.process.program().replace("\\", "/") == "C:/project/.venv/Scripts/python.exe"
+    assert client.process.state() == QProcess.ProcessState.NotRunning
 
 
 @pytest.mark.parametrize("text", ["", "north", "nan", "inf", "91"])
