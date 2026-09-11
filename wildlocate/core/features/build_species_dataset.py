@@ -41,6 +41,7 @@ def build_species_dataset(
     species_name,
     training_points_file=None,
     output_file=None,
+    progress=None,
 ):
     slug = species_slug(species_name)
     training_path = Path(training_points_file) if training_points_file else DEFAULT_INPUT_DIR / f"{slug}_training_points.csv"
@@ -66,6 +67,8 @@ def build_species_dataset(
     feature_columns = None
 
     for row_idx, row in training_df.iterrows():
+        if progress and (row_idx % 25 == 0 or row_idx == total_rows - 1):
+            progress(f"Extracting environmental features: {row_idx + 1:,} of {total_rows:,} locations…")
         latitude = float(row["latitude"])
         longitude = float(row["longitude"])
         presence = int(row["presence"])

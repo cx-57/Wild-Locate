@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import platformdirs
@@ -5,7 +6,8 @@ import platformdirs
 
 def get_user_data_dir() -> Path:
     """Directory where downloaded environmental datasets are stored."""
-    return Path(platformdirs.user_data_dir("wildlocate"))
+    override = os.environ.get("WILDLOCATE_DATA_DIR")
+    return Path(override).expanduser().resolve() if override else Path(platformdirs.user_data_dir("wildlocate"))
 
 
 class DatasetPaths:

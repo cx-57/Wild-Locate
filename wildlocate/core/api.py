@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ConfigDict, Field, ValidationError, create_model
 
-from wildlocate.core.catalog import SUPPORTED_SPECIES
+from wildlocate.core.registry import available_species
 from wildlocate.core.service import PredictionError, assess_habitat
 
 app = FastAPI(
@@ -58,7 +58,7 @@ async def validation_error_handler(request, exc):
 
 @app.get("/species")
 def species():
-    return {"species": list(SUPPORTED_SPECIES)}
+    return {"species": list(available_species())}
 
 
 @app.get("/health")

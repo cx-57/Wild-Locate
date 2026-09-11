@@ -112,6 +112,8 @@ def resolve_species(species_name):
         "taxon_id": int(chosen["id"]),
         "scientific_name": scientific_name,
         "common_name": common_name,
+        "rank": chosen.get("rank"),
+        "iconic_taxon_name": chosen.get("iconic_taxon_name"),
     }
 
 
@@ -154,8 +156,9 @@ def download_species_observations(
     species_name,
     place_name="Massachusetts",
     max_observations=DEFAULT_MAX_OBSERVATIONS,
+    *, taxon_id=None, progress=None,
 ):
-    species = resolve_species(species_name)
+    taxon_id = taxon_id if taxon_id is not None else resolve_species(species_name)["taxon_id"]
     place_id = find_place_id(place_name)
 
     if max_observations <= 0:
@@ -166,7 +169,7 @@ def download_species_observations(
 
     while len(rows) < max_observations:
         params = {
-            "taxon_id": species["taxon_id"],
+            "taxon_id": taxon_id,
             "place_id": place_id,
             "quality_grade": "research",
             "verifiable": "true",
@@ -193,10 +196,12 @@ def download_species_observations(
             break
 
         id_above = batch[-1]["id"]
+        if progress:
+            progress(f"Downloaded {len(rows):,} observations…")
 
     if not rows:
         raise RuntimeError(
-            f"No research-grade Massachusetts observations were found for {species_name}."
+            f"No research-grade, non-captive observations were found for {species_name} in {place_name}."
         )
 
     raw_df = pd.DataFrame(rows, columns=OBSERVATION_COLUMNS)
@@ -232,8 +237,8 @@ def clean_species_observations(df):
     return cleaned
 
 
-def save_cleaned_observations(df, species_name):
-    output_path = Path("data/processed/samples") / f"{species_slug(species_name)}_occurrences.csv"
+def save_cleaned_observations(df, species_name, output_dir="data/processed/samples"):
+    output_path = Path(output_dir) / f"{species_slug(species_name)}_occurrences.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
     return output_path

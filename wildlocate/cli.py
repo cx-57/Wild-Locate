@@ -9,8 +9,8 @@ def cmd_gui(args):
 
 
 def cmd_init(args):
-    import platformdirs
-    data_dir = Path(platformdirs.user_data_dir("wildlocate"))
+    from wildlocate.core.data.environment import get_user_data_dir
+    data_dir = get_user_data_dir()
     raw_dir = data_dir / "raw"
 
     print(f"Wild-Locate: downloading environmental datasets to {data_dir}")

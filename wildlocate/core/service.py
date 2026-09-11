@@ -2,7 +2,7 @@ import logging
 import math
 from threading import Lock
 
-from wildlocate.core.catalog import SUPPORTED_SPECIES
+from wildlocate.core.registry import available_species
 from wildlocate.core.predict import predict_species, validate_lat_lon
 
 logger = logging.getLogger(__name__)
@@ -20,9 +20,9 @@ class PredictionError(Exception):
 
 def assess_habitat(species, latitude, longitude):
     species = species.strip() if isinstance(species, str) else ""
-    canonical = next((name for name in SUPPORTED_SPECIES if name.casefold() == species.casefold()), None)
+    canonical = next((name for name in available_species() if name.casefold() == species.casefold()), None)
     if canonical is None:
-        raise PredictionError("Choose one of the five supported species.", "unsupported_species")
+        raise PredictionError("Choose an available species, or enable a trained model in Manage species.", "unsupported_species")
     try:
         if isinstance(latitude, bool) or isinstance(longitude, bool):
             raise ValueError

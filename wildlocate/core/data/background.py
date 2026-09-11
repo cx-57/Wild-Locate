@@ -47,7 +47,7 @@ def find_place_id(place_name):
     return int(results[0]["id"])
 
 
-def download_mammal_pool(place_name="Massachusetts"):
+def download_mammal_pool(place_name="Massachusetts", progress=None):
     mammals = resolve_species("Mammalia")
     place_id = find_place_id(place_name)
 
@@ -112,6 +112,8 @@ def download_mammal_pool(place_name="Massachusetts"):
             break
 
         id_above = batch[-1]["id"]
+        if progress:
+            progress(f"Downloaded {total_rows:,} Massachusetts background observations…")
 
     if not rows:
         raise RuntimeError("No usable Massachusetts Mammalia observations were found.")
@@ -124,9 +126,10 @@ def download_mammal_pool(place_name="Massachusetts"):
     return df
 
 
-def load_or_create_mammal_pool(refresh_pool=False):
-    if MAMMAL_POOL_FILE.exists() and not refresh_pool:
-        pool_df = pd.read_csv(MAMMAL_POOL_FILE)
+def load_or_create_mammal_pool(refresh_pool=False, pool_file=None, progress=None):
+    pool_file = Path(pool_file) if pool_file is not None else MAMMAL_POOL_FILE
+    if pool_file.exists() and not refresh_pool:
+        pool_df = pd.read_csv(pool_file)
         required_columns = {
             "observation_id", "taxon_id", "taxon_name", "common_name",
             "latitude", "longitude", "positional_accuracy", "observed_on",
@@ -135,13 +138,13 @@ def load_or_create_mammal_pool(refresh_pool=False):
         missing = required_columns.difference(pool_df.columns)
         if missing:
             raise ValueError(
-                f"Existing mammal pool at {MAMMAL_POOL_FILE} is missing required columns: {sorted(missing)}"
+                f"Existing mammal pool at {pool_file} is missing required columns: {sorted(missing)}"
             )
         return pool_df
 
-    pool_df = download_mammal_pool()
-    MAMMAL_POOL_FILE.parent.mkdir(parents=True, exist_ok=True)
-    pool_df.to_csv(MAMMAL_POOL_FILE, index=False)
+    pool_df = download_mammal_pool(progress=progress)
+    pool_file.parent.mkdir(parents=True, exist_ok=True)
+    pool_df.to_csv(pool_file, index=False)
     return pool_df
 
 
@@ -226,6 +229,7 @@ def generate_background(
     exclusion_distance_m=1000,
     thinning_distance_m=500,
     random_state=42,
+    *, samples_dir="data/processed/samples", pool_file=None, taxon_id=None, progress=None,
 ):
     if background_ratio <= 0:
         raise ValueError("background_ratio must be greater than 0.")
@@ -234,11 +238,11 @@ def generate_background(
     if thinning_distance_m <= 0:
         raise ValueError("thinning_distance_m must be greater than 0.")
 
-    species = resolve_species(species_name)
-    target_taxon_id = int(species["taxon_id"])
+    target_taxon_id = int(taxon_id if taxon_id is not None else resolve_species(species_name)["taxon_id"])
 
     species_slug_value = species_slug(species_name)
-    presence_file = Path(f"data/processed/samples/{species_slug_value}_occurrences.csv")
+    samples_dir = Path(samples_dir)
+    presence_file = samples_dir / f"{species_slug_value}_occurrences.csv"
     if not presence_file.exists():
         raise FileNotFoundError(
             f"Could not find cleaned presence file at {presence_file}. Run the Phase 3 species download first."
@@ -253,7 +257,7 @@ def generate_background(
     if presence_df.empty:
         raise RuntimeError(f"No usable presence points found in {presence_file}.")
 
-    pool_df = load_or_create_mammal_pool()
+    pool_df = load_or_create_mammal_pool(pool_file=pool_file, progress=progress)
     candidate_df = filter_mammal_pool(pool_df, target_taxon_id)
 
     if candidate_df.empty:
@@ -301,7 +305,7 @@ def generate_background(
     sample_df = sample_df[["latitude", "longitude"]].copy()
     sample_df["presence"] = 0
 
-    background_file = Path(f"data/processed/samples/{species_slug_value}_background.csv")
+    background_file = samples_dir / f"{species_slug_value}_background.csv"
     background_file.parent.mkdir(parents=True, exist_ok=True)
     sample_df.to_csv(background_file, index=False)
 
@@ -315,7 +319,7 @@ def generate_background(
 
     training_df = training_df.sample(frac=1, random_state=random_state).reset_index(drop=True)
 
-    training_file = Path(f"data/processed/samples/{species_slug_value}_training_points.csv")
+    training_file = samples_dir / f"{species_slug_value}_training_points.csv"
     training_file.parent.mkdir(parents=True, exist_ok=True)
     training_df.to_csv(training_file, index=False)
 

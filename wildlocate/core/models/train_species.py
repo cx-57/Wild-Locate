@@ -221,7 +221,7 @@ def select_spatial_splits(df, feature_columns, y):
     )
 
 
-def evaluate_models(df, feature_columns, splits):
+def evaluate_models(df, feature_columns, splits, progress=None):
     X = df[feature_columns]
     y = df[TARGET_COLUMN].astype(int)
 
@@ -235,6 +235,8 @@ def evaluate_models(df, feature_columns, splits):
         fold_pr_values = []
 
         for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
+            if progress:
+                progress(f"Evaluating {model_name}: spatial fold {fold_index} of {len(splits)}…")
             X_train = X.iloc[train_idx].copy()
             y_train = y.iloc[train_idx].copy().astype(int)
             X_val = X.iloc[val_idx].copy()
@@ -339,21 +341,11 @@ def save_metrics_json(metrics_path, payload):
     metrics_path.write_text(json.dumps(payload, indent=2))
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Train and evaluate species-specific habitat suitability models using spatial CV.",
-    )
-    parser.add_argument("--species", required=True)
-    parser.add_argument("--dataset", default=None)
-    args = parser.parse_args()
-
-    species = args.species.strip()
+def train_species(species, dataset_file=None, output_dir=OUTPUT_DIR, progress=None):
+    species = species.strip()
     slug = species_slug(species)
-
-    if args.dataset:
-        dataset_file = Path(args.dataset)
-    else:
-        dataset_file = Path(f"data/processed/features/species/{slug}_features.csv")
+    dataset_file = Path(dataset_file) if dataset_file is not None else Path(f"data/processed/features/species/{slug}_features.csv")
+    output_dir = Path(output_dir)
 
     if not dataset_file.exists():
         raise FileNotFoundError(f"Could not find species feature dataset at {dataset_file}.")
@@ -391,7 +383,7 @@ def main():
         raise RuntimeError("At least one spatial fold is missing one of the target classes.")
 
     print("\nRunning spatial cross-validation for each candidate model...")
-    model_results, _ = evaluate_models(df, feature_columns, splits)
+    model_results, _ = evaluate_models(df, feature_columns, splits, progress=progress)
 
     best_result = pick_best_model(model_results)
 
@@ -416,13 +408,15 @@ def main():
     X_full = df[feature_columns]
     y_full = df[TARGET_COLUMN].astype(int)
     selected_pipeline = build_estimator(best_result["model"])
+    if progress:
+        progress(f"Fitting the selected {best_result['model']} model on all training locations…")
     selected_pipeline.fit(X_full, y_full)
 
     selected_features = top_features_for_model(best_result["model"], selected_pipeline, feature_columns)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    model_path = OUTPUT_DIR / f"{slug}.joblib"
-    metrics_path = OUTPUT_DIR / f"{slug}_metrics.json"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    model_path = output_dir / f"{slug}.joblib"
+    metrics_path = output_dir / f"{slug}_metrics.json"
 
     joblib.dump(selected_pipeline, model_path)
 
@@ -469,6 +463,15 @@ def main():
 
     print(f"\nSaved trained model to: {model_path}")
     print(f"Saved metrics metadata to: {metrics_path}")
+    return model_path, metrics_path, metrics_payload
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Train and evaluate species-specific habitat suitability models using spatial CV.")
+    parser.add_argument("--species", required=True)
+    parser.add_argument("--dataset", default=None)
+    args = parser.parse_args()
+    train_species(args.species, args.dataset)
 
 
 if __name__ == "__main__":

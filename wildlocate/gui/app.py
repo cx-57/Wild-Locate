@@ -7,12 +7,12 @@ import time
 from PyQt6.QtCore import QIODevice, QSaveFile, QSignalBlocker, Qt, QTimer
 from PyQt6.QtGui import QFont, QFontDatabase, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QApplication, QBoxLayout, QCompleter, QFileDialog, QFrame, QGridLayout,
+    QApplication, QBoxLayout, QComboBox, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QLineEdit, QMainWindow, QProgressBar, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QStyledItemDelegate, QVBoxLayout, QWidget,
 )
 
-from wildlocate.core.catalog import SUPPORTED_SPECIES
+from wildlocate.core.registry import available_species
 from wildlocate.gui.client import PredictionClient
 from wildlocate.gui.formatting import coordinates, feature_display, ordinal
 from wildlocate.gui.location_map import LocationMap
@@ -99,8 +99,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(shell)
         self.responsive_layout()
 
-        self.species.textChanged.connect(self.inputs_changed)
-        self.species.returnPressed.connect(self.analyze)
+        self.species.currentTextChanged.connect(self.inputs_changed)
         for field in (self.latitude, self.longitude):
             field.textChanged.connect(self.inputs_changed)
             field.textChanged.connect(self.sync_map)
@@ -117,7 +116,6 @@ class MainWindow(QMainWindow):
         self.setTabOrder(self.latitude, self.longitude)
         self.setTabOrder(self.longitude, self.analyze_button)
         self.species.setFocus(Qt.FocusReason.OtherFocusReason)
-        self.species.selectAll()
 
     def build_nav(self):
         nav = QWidget()
@@ -128,6 +126,8 @@ class MainWindow(QMainWindow):
         row.addWidget(BrandMark())
         row.addWidget(label("Wild-Locate", "brand"))
         row.addStretch()
+        self.manage_species_button = button("Manage species", "secondary", self.manage_species)
+        row.addWidget(self.manage_species_button)
         row.addWidget(label("MASSACHUSETTS", "pill"), 0, Qt.AlignmentFlag.AlignVCenter)
         nav.setFixedHeight(76)
         return nav
@@ -154,27 +154,22 @@ class MainWindow(QMainWindow):
         layout.addWidget(label("Explore a location", "heading"))
         layout.addWidget(label("One species. One place. A new perspective.", "muted", True))
         layout.addSpacing(3)
-        species_label = label("ENTER A SPECIES", "step")
+        species_label = label("CHOOSE A SPECIES", "step")
         layout.addWidget(species_label)
-        self.species = QLineEdit("North American River Otter")
+        self.species = QComboBox()
+        self.species.addItems(available_species())
+        self.species.setCurrentText("North American River Otter")
         species_label.setBuddy(self.species)
         self.species.setAccessibleName("Species")
-        self.species.setPlaceholderText("Type a species name…")
-        self.species.setMaxLength(100)
-        self.species.setClearButtonEnabled(True)
-        self.species.setToolTip("Supported species: " + ", ".join(SUPPORTED_SPECIES))
-        completer = QCompleter(list(SUPPORTED_SPECIES), self.species)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        self.species.setCompleter(completer)
-        popup = completer.popup()
-        popup.setObjectName("speciesSuggestions")
+        self.species.setToolTip("Choose a species with an enabled model. Add models in Manage species.")
+        popup = self.species.view()
+        popup.setObjectName("speciesOptions")
         popup.setItemDelegate(QStyledItemDelegate(popup))
         popup.setTextElideMode(Qt.TextElideMode.ElideNone)
         popup.ensurePolished()
         popup.setMinimumWidth(popup.sizeHintForColumn(0) + 2 * popup.frameWidth())
         layout.addWidget(self.species)
-        layout.addWidget(label("Five trained species · start typing for suggestions.", "small", True))
+        layout.addWidget(label("Choose an available species, or train another in Manage species.", "small", True))
         layout.addSpacing(3)
         layout.addWidget(label("CHOOSE A LOCATION", "step"))
         self.location_map = LocationMap()
@@ -345,11 +340,33 @@ class MainWindow(QMainWindow):
             self.responsive_layout()
 
     def use_example(self):
-        lat, lon = (42.28, -71.35) if self.species.text().strip().casefold() == "red fox" else (42.3718, -72.2820)
+        lat, lon = (42.28, -71.35) if self.species.currentText() == "Red Fox" else (42.3718, -72.2820)
         self.latitude.setText(f"{lat:.4f}")
         self.longitude.setText(f"{lon:.4f}")
         self.sync_map(recenter=True)
         self.input_note.setText("Example coordinates loaded. Ready to analyze.")
+
+    def manage_species(self):
+        if self.client.busy:
+            return
+        from wildlocate.gui.species_manager import SpeciesManager
+        dialog = SpeciesManager(self)
+        dialog.models_changed.connect(self.refresh_species)
+        dialog.exec()
+        self.refresh_species()
+        dialog.deleteLater()
+
+    def refresh_species(self):
+        selected = self.species.currentText()
+        with QSignalBlocker(self.species):
+            self.species.clear()
+            self.species.addItems(available_species())
+            if self.species.findText(selected) >= 0:
+                self.species.setCurrentText(selected)
+        # A new model for the same species also invalidates the previous result.
+        self.inputs_changed()
+        popup = self.species.view()
+        popup.setMinimumWidth(popup.sizeHintForColumn(0) + 2 * popup.frameWidth())
 
     def map_selected(self, latitude, longitude):
         if self.client.busy:
@@ -414,12 +431,12 @@ class MainWindow(QMainWindow):
     def analyze(self):
         if self.client.busy:
             return
-        species = next((name for name in SUPPORTED_SPECIES if name.casefold() == self.species.text().strip().casefold()), None)
-        if species is None:
+        species = self.species.currentText()
+        if species not in available_species():
             self.species.setProperty("invalid", True)
             self.species.style().unpolish(self.species)
             self.species.style().polish(self.species)
-            self.error.setText("Enter a supported species: " + ", ".join(SUPPORTED_SPECIES) + ".")
+            self.error.setText("Choose an available species from the dropdown, or enable a model in Manage species.")
             self.error.show()
             self.species.setFocus()
             return
@@ -440,7 +457,7 @@ class MainWindow(QMainWindow):
         self.client.analyze(species, *values)
 
     def set_busy(self, busy):
-        for widget in (self.species, self.latitude, self.longitude, self.location_map, self.example_button, self.analyze_button):
+        for widget in (self.species, self.latitude, self.longitude, self.location_map, self.example_button, self.analyze_button, self.manage_species_button):
             widget.setEnabled(not busy)
         self.cancel_button.setVisible(busy)
         self.progress.setVisible(busy)

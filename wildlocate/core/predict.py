@@ -2,22 +2,13 @@
 
 import argparse
 import json
-from pathlib import Path
 
 import joblib
 import numpy as np
 import pandas as pd
 
-import wildlocate
 from wildlocate.core.features.extract import extract_features
-
-_PKG_ROOT = Path(wildlocate.__file__).resolve().parent
-MODEL_DIR = _PKG_ROOT / "data" / "processed" / "models"
-FEATURES_DIR = _PKG_ROOT / "data" / "processed" / "features" / "species"
-
-
-def species_slug(species):
-    return species.strip().lower().replace(" ", "_")
+from wildlocate.core.registry import resolve_model
 
 
 def format_model_name(model_name):
@@ -26,10 +17,10 @@ def format_model_name(model_name):
     return model_name
 
 
-def load_model_and_metadata(species):
-    slug = species_slug(species)
-    model_path = MODEL_DIR / f"{slug}.joblib"
-    metrics_path = MODEL_DIR / f"{slug}_metrics.json"
+def load_model_and_metadata(species, record=None):
+    record = record or resolve_model(species)
+    model_path = record.model_path
+    metrics_path = record.metrics_path
 
     if not model_path.exists() or not metrics_path.exists():
         raise FileNotFoundError(
@@ -69,9 +60,9 @@ def build_prediction_frame(features, predictor_names):
     return pd.DataFrame([[features[name] for name in predictor_names]], columns=predictor_names)
 
 
-def load_comparison_scores(model, predictor_names, species):
-    slug = species_slug(species)
-    comparison_file = FEATURES_DIR / f"{slug}_features.csv"
+def load_comparison_scores(model, predictor_names, species, record=None):
+    record = record or resolve_model(species)
+    comparison_file = record.features_path
 
     if not comparison_file.exists():
         raise FileNotFoundError(
@@ -157,7 +148,9 @@ def predict_species(species, latitude, longitude):
 
     validate_lat_lon(latitude, longitude)
 
-    model, metrics = load_model_and_metadata(species)
+    record = resolve_model(species)
+    species = record.species
+    model, metrics = load_model_and_metadata(species, record)
 
     predictor_names = metrics.get("predictor_names")
     if not predictor_names:
@@ -179,7 +172,7 @@ def predict_species(species, latitude, longitude):
     if not np.isfinite(predicted_score):
         raise RuntimeError("Prediction failed: the computed suitability score is not finite.")
 
-    comparison_scores, _ = load_comparison_scores(model, predictor_names, species)
+    comparison_scores, _ = load_comparison_scores(model, predictor_names, species, record)
     percentile = percentile_of_score(predicted_score, comparison_scores)
     category = category_for_percentile(percentile)
 
