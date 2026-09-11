@@ -43,6 +43,16 @@ def app_icon():
     return QIcon(pixmap)
 
 
+class BrandMark(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(36, 36)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        draw_mark(painter, 36)
+
+
 class SuitabilityGauge(QWidget):
     COLORS = ("#e1e6d9", "#c9d6af", "#a5bb7c", "#708f4c", "#345e3c")
 

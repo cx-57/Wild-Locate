@@ -19,7 +19,7 @@ from src.catalog import SUPPORTED_SPECIES
 from web.client import PredictionClient
 from web.formatting import coordinates, feature_display, ordinal
 from web.theme import STYLESHEET
-from web.widgets import Disclosure, SuitabilityGauge, app_icon, divider, label
+from web.widgets import BrandMark, Disclosure, SuitabilityGauge, app_icon, divider, label
 
 
 def button(text, role="", callback=None):
@@ -122,6 +122,7 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout(nav)
         row.setContentsMargins(38, 0, 38, 0)
         row.setSpacing(13)
+        row.addWidget(BrandMark())
         row.addWidget(label("Wild-Locate", "brand"))
         row.addStretch()
         row.addWidget(label("MASSACHUSETTS", "pill"), 0, Qt.AlignmentFlag.AlignVCenter)
