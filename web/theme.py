@@ -30,7 +30,8 @@ QComboBox:focus, QLineEdit:focus { border: 2px solid #477c54; padding: 11px 10px
 QComboBox:disabled, QLineEdit:disabled { color: #8a958d; background: #f4f6f1; border-color: #e3e8df; }
 QLineEdit[invalid="true"] { border: 1px solid #b75742; background: #fff8f4; }
 QComboBox::drop-down { border: none; width: 28px; }
-QComboBox QAbstractItemView { background: white; border: 1px solid #d4ded2; padding: 5px; selection-background-color: #e8efdf; selection-color: #193e30; outline: none; }
+QAbstractItemView#speciesSuggestions { background: white; border: 1px solid #d4ded2; padding: 0; selection-background-color: #e8efdf; selection-color: #193e30; outline: none; }
+QAbstractItemView#speciesSuggestions::item { min-height: 22px; padding: 8px 12px; }
 QPushButton { background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 9px 12px; font-weight: 500; }
 QPushButton:hover { background: #eaf0e5; }
 QPushButton:focus { border: 1px solid #477c54; }
@@ -40,7 +41,6 @@ QPushButton#primary:pressed { background: #193e2a; }
 QPushButton#primary:disabled { color: #d4dfce; background: #718974; }
 QPushButton#secondary { border: 1px solid #d5dfcf; color: #42634b; }
 QPushButton#link { color: #47724f; font-size: 11px; padding: 5px 0px; text-align: left; }
-QPushButton#navActive { color: #315d3f; border-bottom: 2px solid #315d3f; border-radius: 0; padding: 22px 8px; }
 QPushButton#accordion { text-align: left; padding: 18px 21px; font-size: 13px; font-weight: 600; }
 QPushButton:disabled { color: #8e9a8b; }
 QProgressBar { background: #e5ecdf; border: none; border-radius: 2px; max-height: 4px; min-height: 4px; }

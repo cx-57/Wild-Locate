@@ -6,6 +6,7 @@ from unittest.mock import Mock
 import pytest
 from PyQt6.QtCore import QProcess, Qt
 from PyQt6.QtTest import QTest
+from PyQt6.QtWidgets import QStyle, QStyleOptionViewItem
 
 from web.app import MainWindow, create_application
 from web.client import PredictionClient
@@ -136,6 +137,27 @@ def test_species_suggestions_match_within_names(window):
     window.result = object()
     window.species.setText("Bobcat")
     assert window.result is None
+
+
+@pytest.mark.parametrize("width", [780, 1000, 1240])
+def test_suggestion_rows_fit_complete_names(window, app, width):
+    window.resize(width, 930)
+    window.species.clear()
+    completer = window.species.completer()
+    completer.setCompletionPrefix("")
+    completer.complete()
+    app.processEvents()
+    popup = completer.popup()
+    for row in range(popup.model().rowCount()):
+        index = popup.model().index(row, 0)
+        option = QStyleOptionViewItem()
+        option.initFrom(popup)
+        popup.itemDelegate().initStyleOption(option, index)
+        option.rect = popup.visualRect(index)
+        text_rect = popup.style().subElementRect(QStyle.SubElement.SE_ItemViewItemText, option, popup)
+        assert text_rect.height() >= option.fontMetrics.height()
+        assert text_rect.width() >= option.fontMetrics.horizontalAdvance(index.data())
+    popup.hide()
 
 
 def test_narrow_layout_has_no_horizontal_overflow(window, app):

@@ -1,5 +1,3 @@
-import math
-
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap, QIcon
 from PyQt6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
@@ -43,56 +41,6 @@ def app_icon():
     draw_mark(painter, 80)
     painter.end()
     return QIcon(pixmap)
-
-
-class BrandMark(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setFixedSize(36, 36)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        draw_mark(painter, 36)
-
-
-class ContourArt(QWidget):
-    def __init__(self, compact=False):
-        super().__init__()
-        self.compact = compact
-        self.setMinimumHeight(100 if compact else 145)
-        self.setAccessibleName("Decorative contour illustration")
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.translate(self.width() / 2, self.height() / 2)
-        scale = min(self.width() / 370, self.height() / 170)
-        p.scale(scale, scale)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        for ring in range(11):
-            path = QPainterPath()
-            for step in range(121):
-                theta = step / 120 * 2 * math.pi
-                radius = 22 + ring * 8 + math.sin(theta * 3 + ring * 0.12) * (4 + ring * 0.5)
-                point = QPointF(math.cos(theta) * radius * 1.65, math.sin(theta) * radius * 0.70)
-                if step == 0:
-                    path.moveTo(point)
-                else:
-                    path.lineTo(point)
-            p.setPen(QPen(QColor("#d9e1cd" if ring % 3 else "#c7d5b8"), 0.9))
-            p.drawPath(path)
-        if not self.compact:
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor("#edf2e5"))
-            p.drawEllipse(QPointF(0, 0), 25, 25)
-            p.setBrush(QColor("#50743c"))
-            p.drawEllipse(QPointF(0, 0), 7, 7)
-            p.setPen(QPen(QColor("#50743c"), 1.2))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(QPointF(0, 0), 16, 16)
-            for a in (0, 90, 180, 270):
-                rad = math.radians(a)
-                p.drawLine(QPointF(math.cos(rad) * 21, math.sin(rad) * 21), QPointF(math.cos(rad) * 28, math.sin(rad) * 28))
 
 
 class SuitabilityGauge(QWidget):

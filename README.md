@@ -25,7 +25,7 @@ The result presents the backend's category and percentile, relative score, model
 
 - **Ctrl+Enter** analyzes the current inputs.
 - **Escape** cancels an active analysis.
-- **How it works** opens the methodology section.
+- **Assessment Info** expands the methodology section below the assessment.
 - The layout stacks vertically in smaller windows and supports scrolling.
 
 The first analysis can take longer while the existing backend reads local environmental datasets. Work runs in a separate, persistent Python process so the window stays responsive and the extractor can reuse its existing cache. Cancel closes that process; the next analysis starts a new one. Closing the app also closes its worker. No API server is required for desktop use.

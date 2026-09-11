@@ -12,14 +12,14 @@ from PyQt6.QtGui import QFont, QFontDatabase, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication, QBoxLayout, QCompleter, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QLineEdit, QMainWindow, QProgressBar, QPushButton,
-    QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
+    QScrollArea, QSizePolicy, QStackedWidget, QStyledItemDelegate, QVBoxLayout, QWidget,
 )
 
 from src.catalog import SUPPORTED_SPECIES
 from web.client import PredictionClient
 from web.formatting import coordinates, feature_display, ordinal
 from web.theme import STYLESHEET
-from web.widgets import BrandMark, ContourArt, Disclosure, SuitabilityGauge, app_icon, divider, label
+from web.widgets import Disclosure, SuitabilityGauge, app_icon, divider, label
 
 
 def button(text, role="", callback=None):
@@ -90,9 +90,9 @@ class MainWindow(QMainWindow):
         self.page_layout.addWidget(self.methodology)
 
         footer = QHBoxLayout()
-        footer.addWidget(label("WILD-LOCATE   /   A closer look at habitat.", "small"))
+        footer.addWidget(label("WildLocate", "small"))
         footer.addStretch()
-        footer.addWidget(label("Built on observations. Informed by environment.", "small"))
+        footer.addWidget(label("Zain Aboobacker & Charles Xie", "small"))
         self.page_layout.addLayout(footer)
         self.page_layout.addStretch()
         outer.addWidget(self.page)
@@ -122,11 +122,7 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout(nav)
         row.setContentsMargins(38, 0, 38, 0)
         row.setSpacing(13)
-        row.addWidget(BrandMark())
         row.addWidget(label("Wild-Locate", "brand"))
-        row.addSpacing(35)
-        row.addWidget(button("Habitat explorer", "navActive", self.go_top))
-        row.addWidget(button("How it works", callback=self.show_methodology))
         row.addStretch()
         row.addWidget(label("MASSACHUSETTS", "pill"), 0, Qt.AlignmentFlag.AlignVCenter)
         nav.setFixedHeight(76)
@@ -138,14 +134,11 @@ class MainWindow(QMainWindow):
         row.setContentsMargins(0, 32, 0, 8)
         text = QVBoxLayout()
         text.setSpacing(12)
-        text.addWidget(label("WILDLIFE  /  HABITAT INTELLIGENCE", "eyebrow"))
+        text.addWidget(label("WildLocate", "eyebrow"))
         text.addWidget(label("Find where wildlife can thrive.", "hero", True))
         description = label("Wild-Locate uses species observations and environmental data to estimate how suitable a location is as habitat for wildlife.", "description", True)
         text.addWidget(description)
         row.addLayout(text, 1)
-        self.hero_art = ContourArt(compact=True)
-        self.hero_art.setFixedWidth(220)
-        row.addWidget(self.hero_art)
         return hero
 
     def build_inputs(self):
@@ -157,7 +150,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(label("Explore a location", "heading"))
         layout.addWidget(label("One species. One place. A new perspective.", "muted", True))
         layout.addSpacing(3)
-        species_label = label("01   ENTER A SPECIES", "step")
+        species_label = label("ENTER A SPECIES", "step")
         layout.addWidget(species_label)
         self.species = QLineEdit("North American River Otter")
         species_label.setBuddy(self.species)
@@ -170,10 +163,16 @@ class MainWindow(QMainWindow):
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.species.setCompleter(completer)
+        popup = completer.popup()
+        popup.setObjectName("speciesSuggestions")
+        popup.setItemDelegate(QStyledItemDelegate(popup))
+        popup.setTextElideMode(Qt.TextElideMode.ElideNone)
+        popup.ensurePolished()
+        popup.setMinimumWidth(popup.sizeHintForColumn(0) + 2 * popup.frameWidth())
         layout.addWidget(self.species)
         layout.addWidget(label("Five trained species · start typing for suggestions.", "small", True))
         layout.addSpacing(3)
-        layout.addWidget(label("02   CHOOSE A LOCATION", "step"))
+        layout.addWidget(label("CHOOSE A LOCATION", "step"))
         coordinate_layout = QHBoxLayout()
         coordinate_layout.setSpacing(12)
         self.latitude = QLineEdit("42.3718")
@@ -232,7 +231,6 @@ class MainWindow(QMainWindow):
         empty_layout.setContentsMargins(12, 10, 12, 0)
         empty_layout.setSpacing(14)
         empty_layout.addStretch()
-        empty_layout.addWidget(ContourArt())
         heading = label("A landscape of possibility.", "emptyHeading", True)
         heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(heading)
@@ -299,16 +297,16 @@ class MainWindow(QMainWindow):
         return card
 
     def build_methodology(self):
-        info = Disclosure("Behind the assessment", "methodology")
+        info = Disclosure("Assessment Info", "methodology")
         info.body_layout.addWidget(label("The existing species-specific machine-learning model combines iNaturalist species observations with environmental conditions at your selected location.", "muted", True))
         grid = QGridLayout()
         grid.setHorizontalSpacing(28)
         grid.setVerticalSpacing(16)
         entries = (
-            ("01 / Observations", "iNaturalist species observations used in model training."),
-            ("02 / Land & terrain", "NLCD land cover and impervious surface; USGS elevation and derived terrain conditions."),
-            ("03 / Water & roads", "Massachusetts hydrography and road data describe proximity to water and roads."),
-            ("04 / Relative suitability", "Percentiles compare this location's score with the species' comparison locations. They are not a measure of model confidence."),
+            ("Observations", "iNaturalist species observations used in model training."),
+            ("Land & terrain", "NLCD land cover and impervious surface; USGS elevation and derived terrain conditions."),
+            ("Water & roads", "Massachusetts hydrography and road data describe proximity to water and roads."),
+            ("Relative suitability", "Percentiles compare this location's score with the species' comparison locations. They are not a measure of model confidence."),
         )
         for index, (title, description) in enumerate(entries):
             column = QVBoxLayout()
@@ -320,20 +318,11 @@ class MainWindow(QMainWindow):
         info.body_layout.addWidget(label("Percentile guide: 0–19 Very Low · 20–39 Low · 40–59 Moderate · 60–79 High · 80–100 Very High", "small", True))
         return info
 
-    def go_top(self):
-        if hasattr(self, "scroll"):
-            self.scroll.verticalScrollBar().setValue(0)
-
-    def show_methodology(self):
-        self.methodology.set_expanded(True)
-        QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(self.methodology))
-
     def responsive_layout(self):
         narrow = self.width() < 1000
         self.cards.setDirection(QBoxLayout.Direction.TopToBottom if narrow else QBoxLayout.Direction.LeftToRight)
         self.input_card.setMinimumWidth(0 if narrow else 330)
         self.input_card.setMaximumWidth(16777215 if narrow else 355)
-        self.hero_art.setVisible(not narrow)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -442,8 +431,7 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.result_page)
         while self.feature_table.count():
             item = self.feature_table.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            item.widget().deleteLater()
         for row, (name, value) in enumerate(result["features"].items()):
             title, formatted = feature_display(name, value)
             self.feature_table.addWidget(label(title, "muted", True), row, 0)
