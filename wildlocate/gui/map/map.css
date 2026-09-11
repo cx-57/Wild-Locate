@@ -1,0 +1,13 @@
+html, body, #map { width: 100%; height: 100%; margin: 0; }
+body { font-family: "Segoe UI", sans-serif; }
+#map { background: #e7eddf; cursor: crosshair; }
+.leaflet-container { font-family: "Segoe UI", sans-serif; }
+.leaflet-control-attribution { font-size: 10px; }
+.leaflet-control-attribution a { color: #285a40; }
+.leaflet-bar { border: 1px solid #c5d2bc !important; box-shadow: 0 2px 7px #1833231a; }
+.leaflet-bar a { color: #254f38; }
+.location-pin { background: none; border: none; }
+.location-pin span { display: block; width: 20px; height: 20px; margin: 3px; border: 3px solid white; border-radius: 50%; background: #254f38; box-shadow: 0 0 0 7px #254f3833, 0 2px 7px #18332366; }
+#reset { position: absolute; top: 10px; right: 10px; z-index: 1000; background: #fff; color: #254f38; font: 600 11px "Segoe UI", sans-serif; border: 1px solid #c5d2bc; border-radius: 5px; padding: 8px 10px; cursor: pointer; }
+#reset:focus-visible { outline: 2px solid #254f38; outline-offset: 2px; }
+body[aria-busy="true"] #map { cursor: wait; }

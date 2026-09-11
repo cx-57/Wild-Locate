@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' qrc:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'none'">
+  <title>Wild-Locate location map</title>
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="map.css">
+  <script defer src="vendor/leaflet.js"></script>
+  <script defer src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script defer src="map.js"></script>
+</head>
+<body>
+  <div id="map" role="region" aria-label="Massachusetts location picker"></div>
+  <button id="reset" type="button" title="Show Massachusetts">Massachusetts ↗</button>
+</body>
+</html>

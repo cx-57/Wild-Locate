@@ -1,5 +1,3 @@
-"""Double-click launcher on Windows when associated with the project Python."""
-
-from web.app import main
+from wildlocate.gui.app import main
 
 main()
