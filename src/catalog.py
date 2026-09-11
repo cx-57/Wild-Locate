@@ -1,5 +1,3 @@
-"""Species supported by the user-facing application; no model imports needed."""
-
 SUPPORTED_SPECIES = (
     "Bobcat",
     "Fisher",

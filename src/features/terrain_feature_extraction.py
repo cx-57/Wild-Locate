@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import rasterio
@@ -11,7 +9,7 @@ from rasterio.warp import calculate_default_transform, reproject
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def ensure_projected_elevation_raster(root: Path | None = None) -> Path:
+def ensure_projected_elevation_raster(root=None):
     root = Path(root) if root is not None else ROOT
     source_path = root / "data" / "raw" / "usgs_3dep" / "elevation_3dep.tif"
     target_path = root / "data" / "raw" / "usgs_3dep" / "elevation_3dep_5070.tif"

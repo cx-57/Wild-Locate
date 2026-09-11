@@ -1,5 +1,3 @@
-"""Qt interaction checks without invoking the worker or producing predictions."""
-
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -85,7 +83,7 @@ def test_worker_crash_restores_controls(window, monkeypatch):
         window.client.busy = True
     monkeypatch.setattr(window.client, "analyze", pending_analysis)
     window.analyze()
-    window.client._finished(1, QProcess.ExitStatus.CrashExit)
+    window.client.finished(1, QProcess.ExitStatus.CrashExit)
     assert not window.client.busy
     assert window.analyze_button.isEnabled()
     assert "stopped unexpectedly" in window.error.text()

@@ -1,7 +1,3 @@
-"""Launch with python -m web.app or python web/app.py."""
-
-from __future__ import annotations
-
 import json
 import math
 from pathlib import Path
@@ -44,12 +40,12 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(760, 640)
         self.result = None
         self.client = PredictionClient(self)
-        self.client.succeeded.connect(self._show_result)
-        self.client.failed.connect(self._show_error)
-        self.client.cancelled.connect(self._cancelled)
+        self.client.succeeded.connect(self.show_result)
+        self.client.failed.connect(self.show_error)
+        self.client.cancelled.connect(self.cancelled)
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
-        self.timer.timeout.connect(self._update_elapsed)
+        self.timer.timeout.connect(self.update_elapsed)
         self._started_at = 0
 
         shell = QWidget()
@@ -57,7 +53,7 @@ class MainWindow(QMainWindow):
         shell_layout = QVBoxLayout(shell)
         shell_layout.setContentsMargins(0, 0, 0, 0)
         shell_layout.setSpacing(0)
-        shell_layout.addWidget(self._build_nav())
+        shell_layout.addWidget(self.build_nav())
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -72,12 +68,12 @@ class MainWindow(QMainWindow):
         self.page_layout = QVBoxLayout(self.page)
         self.page_layout.setContentsMargins(0, 0, 0, 24)
         self.page_layout.setSpacing(20)
-        self.page_layout.addWidget(self._build_hero())
+        self.page_layout.addWidget(self.build_hero())
 
         self.cards = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         self.cards.setSpacing(22)
-        self.input_card = self._build_inputs()
-        self.result_card = self._build_results()
+        self.input_card = self.build_inputs()
+        self.result_card = self.build_results()
         self.cards.addWidget(self.input_card, 0)
         self.cards.addWidget(self.result_card, 1)
         self.page_layout.addLayout(self.cards)
@@ -90,7 +86,7 @@ class MainWindow(QMainWindow):
         self.environment.body_layout.addLayout(self.feature_table)
         self.page_layout.addWidget(self.environment)
         self.environment.hide()
-        self.methodology = self._build_methodology()
+        self.methodology = self.build_methodology()
         self.page_layout.addWidget(self.methodology)
 
         footer = QHBoxLayout()
@@ -103,24 +99,24 @@ class MainWindow(QMainWindow):
         self.scroll.setWidget(canvas)
         shell_layout.addWidget(self.scroll)
         self.setCentralWidget(shell)
-        self._responsive_layout()
+        self.responsive_layout()
 
-        self.species.textChanged.connect(self._inputs_changed)
+        self.species.textChanged.connect(self.inputs_changed)
         self.species.returnPressed.connect(self.analyze)
         for field in (self.latitude, self.longitude):
-            field.textChanged.connect(self._inputs_changed)
+            field.textChanged.connect(self.inputs_changed)
             field.returnPressed.connect(self.analyze)
         self.shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
         self.shortcut.activated.connect(self.analyze)
         self.cancel_shortcut = QShortcut(QKeySequence("Escape"), self)
-        self.cancel_shortcut.activated.connect(self._cancel_if_busy)
+        self.cancel_shortcut.activated.connect(self.cancel_if_busy)
         self.setTabOrder(self.species, self.latitude)
         self.setTabOrder(self.latitude, self.longitude)
         self.setTabOrder(self.longitude, self.analyze_button)
         self.species.setFocus(Qt.FocusReason.OtherFocusReason)
         self.species.selectAll()
 
-    def _build_nav(self):
+    def build_nav(self):
         nav = QWidget()
         nav.setObjectName("nav")
         row = QHBoxLayout(nav)
@@ -129,14 +125,14 @@ class MainWindow(QMainWindow):
         row.addWidget(BrandMark())
         row.addWidget(label("Wild-Locate", "brand"))
         row.addSpacing(35)
-        row.addWidget(button("Habitat explorer", "navActive", self._go_top))
-        row.addWidget(button("How it works", callback=self._show_methodology))
+        row.addWidget(button("Habitat explorer", "navActive", self.go_top))
+        row.addWidget(button("How it works", callback=self.show_methodology))
         row.addStretch()
         row.addWidget(label("MASSACHUSETTS", "pill"), 0, Qt.AlignmentFlag.AlignVCenter)
         nav.setFixedHeight(76)
         return nav
 
-    def _build_hero(self):
+    def build_hero(self):
         hero = QWidget()
         row = QHBoxLayout(hero)
         row.setContentsMargins(0, 32, 0, 8)
@@ -152,7 +148,7 @@ class MainWindow(QMainWindow):
         row.addWidget(self.hero_art)
         return hero
 
-    def _build_inputs(self):
+    def build_inputs(self):
         card = QFrame()
         card.setObjectName("card")
         layout = QVBoxLayout(card)
@@ -197,7 +193,7 @@ class MainWindow(QMainWindow):
             coordinate_layout.addLayout(column, 1)
         layout.addLayout(coordinate_layout)
         layout.addWidget(label("Decimal degrees · available Massachusetts data", "small", True))
-        self.example_button = button("↗  Use example coordinates", "link", self._use_example)
+        self.example_button = button("↗  Use example coordinates", "link", self.use_example)
         self.example_button.setToolTip("Fills an example location. Select Analyze Habitat to get a real prediction.")
         layout.addWidget(self.example_button)
         self.error = label("", "error", True)
@@ -216,7 +212,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.input_note)
         return card
 
-    def _build_results(self):
+    def build_results(self):
         card = QFrame()
         card.setObjectName("card")
         card.setMinimumHeight(474)
@@ -297,12 +293,12 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.result_page)
         layout.addWidget(self.stack, 1)
         layout.addWidget(label("The suitability score is relative and does not represent the probability that the species is currently present.", "notice", True))
-        self.export_button = button("↓  Export assessment as JSON", "link", self._export_result)
+        self.export_button = button("↓  Export assessment as JSON", "link", self.export_result)
         self.export_button.hide()
         layout.addWidget(self.export_button)
         return card
 
-    def _build_methodology(self):
+    def build_methodology(self):
         info = Disclosure("Behind the assessment", "methodology")
         info.body_layout.addWidget(label("The existing species-specific machine-learning model combines iNaturalist species observations with environmental conditions at your selected location.", "muted", True))
         grid = QGridLayout()
@@ -324,15 +320,15 @@ class MainWindow(QMainWindow):
         info.body_layout.addWidget(label("Percentile guide: 0–19 Very Low · 20–39 Low · 40–59 Moderate · 60–79 High · 80–100 Very High", "small", True))
         return info
 
-    def _go_top(self):
+    def go_top(self):
         if hasattr(self, "scroll"):
             self.scroll.verticalScrollBar().setValue(0)
 
-    def _show_methodology(self):
+    def show_methodology(self):
         self.methodology.set_expanded(True)
         QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(self.methodology))
 
-    def _responsive_layout(self):
+    def responsive_layout(self):
         narrow = self.width() < 1000
         self.cards.setDirection(QBoxLayout.Direction.TopToBottom if narrow else QBoxLayout.Direction.LeftToRight)
         self.input_card.setMinimumWidth(0 if narrow else 330)
@@ -342,15 +338,15 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "cards"):
-            self._responsive_layout()
+            self.responsive_layout()
 
-    def _use_example(self):
+    def use_example(self):
         lat, lon = (42.28, -71.35) if self.species.text().strip().casefold() == "red fox" else (42.3718, -72.2820)
         self.latitude.setText(f"{lat:.4f}")
         self.longitude.setText(f"{lon:.4f}")
         self.input_note.setText("Example coordinates loaded. Ready to analyze.")
 
-    def _inputs_changed(self):
+    def inputs_changed(self):
         self.error.hide()
         for field in (self.species, self.latitude, self.longitude):
             field.setProperty("invalid", False)
@@ -365,7 +361,7 @@ class MainWindow(QMainWindow):
             self.result_status.setText("AWAITING ANALYSIS")
         self.input_note.setText("Your analysis runs locally on this computer.")
 
-    def _read_coordinates(self):
+    def read_coordinates(self):
         values = []
         errors = []
         first_invalid = None
@@ -400,7 +396,7 @@ class MainWindow(QMainWindow):
             self.error.show()
             self.species.setFocus()
             return
-        values = self._read_coordinates()
+        values = self.read_coordinates()
         if values is None:
             return
         self.error.hide()
@@ -410,13 +406,13 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.empty_page)
         self.empty_text.setText("Reading local environmental data and evaluating the species model.")
         self.result_status.setText("ANALYSIS IN PROGRESS")
-        self._set_busy(True)
+        self.set_busy(True)
         self._started_at = time.monotonic()
-        self._update_elapsed()
+        self.update_elapsed()
         self.timer.start()
         self.client.analyze(species, *values)
 
-    def _set_busy(self, busy: bool):
+    def set_busy(self, busy):
         for widget in (self.species, self.latitude, self.longitude, self.example_button, self.analyze_button):
             widget.setEnabled(not busy)
         self.cancel_button.setVisible(busy)
@@ -426,12 +422,12 @@ class MainWindow(QMainWindow):
             self.timer.stop()
             self.elapsed.setText("")
 
-    def _update_elapsed(self):
+    def update_elapsed(self):
         seconds = int(time.monotonic() - self._started_at)
         self.elapsed.setText(f"{seconds}s elapsed · first analysis may take longer")
 
-    def _show_result(self, result: dict):
-        self._set_busy(False)
+    def show_result(self, result):
+        self.set_busy(False)
         self.result = result
         self.result_species.setText(result["species"])
         self.result_location.setText(coordinates(result["latitude"], result["longitude"]))
@@ -460,23 +456,23 @@ class MainWindow(QMainWindow):
         self.export_button.show()
         self.input_note.setText("Assessment complete. Explore another location.")
 
-    def _show_error(self, message: str):
-        self._set_busy(False)
+    def show_error(self, message):
+        self.set_busy(False)
         self.error.setText(message)
         self.error.show()
         self.empty_text.setText("We couldn't complete this assessment. Review the message and try again.")
         self.result_status.setText("ANALYSIS UNAVAILABLE")
 
-    def _cancel_if_busy(self):
+    def cancel_if_busy(self):
         if self.client.busy:
             self.client.cancel()
 
-    def _cancelled(self):
-        self._set_busy(False)
+    def cancelled(self):
+        self.set_busy(False)
         self.empty_text.setText("Analysis cancelled. Your selected species and coordinates are ready when you are.")
         self.result_status.setText("AWAITING ANALYSIS")
 
-    def _export_result(self):
+    def export_result(self):
         if self.result is None:
             return
         filename = f"wild-locate-{self.result['species'].lower().replace(' ', '-')}.json"

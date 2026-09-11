@@ -1,18 +1,16 @@
-"""Presentation only. Suitability calculations stay in src.predict."""
-
 import math
 
 
-def ordinal(value: int) -> str:
+def ordinal(value):
     suffix = "th" if 10 <= value % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(value % 10, "th")
     return f"{value}{suffix}"
 
 
-def coordinates(latitude: float, longitude: float) -> str:
+def coordinates(latitude, longitude):
     return f"{abs(latitude):.4f}° {'N' if latitude >= 0 else 'S'}  /  {abs(longitude):.4f}° {'E' if longitude >= 0 else 'W'}"
 
 
-def feature_display(name: str, value: float) -> tuple[str, str]:
+def feature_display(name, value):
     radius = "250 m" if name.endswith("_250m") else "1 km"
     labels = {
         "forest_fraction": "Forest cover",

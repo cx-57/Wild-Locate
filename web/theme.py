@@ -1,5 +1,3 @@
-"""A restrained, warm desktop palette."""
-
 STYLESHEET = """
 QWidget { font-family: 'Segoe UI'; font-size: 13px; color: #233c34; }
 QMainWindow, QScrollArea, QWidget#canvas, QWidget#page { background: #f5f6f2; }

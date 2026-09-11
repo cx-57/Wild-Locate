@@ -1,5 +1,3 @@
-"""Exercise the application boundary with prediction explicitly replaced."""
-
 from unittest.mock import Mock
 
 import pytest

@@ -1,18 +1,9 @@
-"""Private JSON-lines transport for the desktop app's isolated Python worker.
-
-The desktop sends requests on stdin. Keeping this process alive allows the
-existing extractor to reuse its cache; closing it cancels work safely without
-terminating a Qt thread or changing the prediction calculation.
-"""
-
-from __future__ import annotations
-
 from contextlib import redirect_stdout
 import json
 import sys
 
 
-def main() -> None:
+def main():
     # Reserve stdout for the transport, including during heavy backend imports.
     with redirect_stdout(sys.stderr):
         from src.service import PredictionError, assess_habitat

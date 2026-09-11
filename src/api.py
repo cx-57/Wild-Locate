@@ -1,11 +1,9 @@
-"""Thin HTTP interface. Run: python -m uvicorn src.api:app --host 127.0.0.1"""
+from enum import Enum
 
-from typing import Literal
-
-from fastapi import FastAPI, Request
+from fastapi import Body, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field, ValidationError, create_model
 
 from src.catalog import SUPPORTED_SPECIES
 from src.service import PredictionError, assess_habitat
@@ -17,32 +15,41 @@ app = FastAPI(
 )
 
 
-class PredictionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    species: str = Field(min_length=1, max_length=100)
-    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False, strict=True)
-    longitude: float = Field(ge=-180, le=180, allow_inf_nan=False, strict=True)
+# These are runtime validation schemas, shared by the endpoint and OpenAPI.
+PredictionRequest = create_model(
+    "PredictionRequest",
+    __config__=ConfigDict(extra="forbid", str_strip_whitespace=True),
+    species=(str, Field(min_length=1, max_length=100)),
+    latitude=(float, Field(ge=-90, le=90, allow_inf_nan=False, strict=True)),
+    longitude=(float, Field(ge=-180, le=180, allow_inf_nan=False, strict=True)),
+)
 
+SuitabilityCategory = Enum("SuitabilityCategory", {
+    "VERY_LOW": "Very Low", "LOW": "Low", "MODERATE": "Moderate",
+    "HIGH": "High", "VERY_HIGH": "Very High",
+}, type=str)
 
-class PredictionResponse(BaseModel):
-    species: str
-    latitude: float
-    longitude: float
-    score: float = Field(allow_inf_nan=False)
-    percentile: int = Field(ge=0, le=100)
-    category: Literal["Very Low", "Low", "Moderate", "High", "Very High"]
-    model: str
-    training_observations: int
-    features: dict[str, float]
+PredictionResponse = create_model(
+    "PredictionResponse",
+    species=(str, ...),
+    latitude=(float, ...),
+    longitude=(float, ...),
+    score=(float, Field(allow_inf_nan=False)),
+    percentile=(int, Field(ge=0, le=100)),
+    category=(SuitabilityCategory, ...),
+    model=(str, ...),
+    training_observations=(int, ...),
+    features=(dict[str, float], ...),
+)
 
 
 @app.exception_handler(PredictionError)
-async def prediction_error_handler(request: Request, exc: PredictionError):
+async def prediction_error_handler(request, exc):
     return JSONResponse(status_code=exc.status_code, content={"detail": str(exc), "code": exc.code})
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_error_handler(request: Request, exc: RequestValidationError):
+async def validation_error_handler(request, exc):
     fields = sorted({str(error["loc"][-1]) for error in exc.errors()})
     return JSONResponse(status_code=422, content={
         "detail": "Check the request: supply a species, latitude from −90 to 90, and longitude from −180 to 180 as numbers.",
@@ -61,6 +68,14 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/predict", response_model=PredictionResponse)
-def predict(request: PredictionRequest):
+@app.post("/predict", response_model=PredictionResponse, openapi_extra={
+    "requestBody": {"content": {"application/json": {"schema": PredictionRequest.model_json_schema()}}},
+})
+def predict(request=Body(...)):
+    try:
+        request = PredictionRequest.model_validate(request)
+    except ValidationError as exc:
+        raise RequestValidationError([
+            {**error, "loc": ("body", *error["loc"])} for error in exc.errors()
+        ]) from exc
     return assess_habitat(request.species, request.latitude, request.longitude)

@@ -1,26 +1,4 @@
 #!/usr/bin/env python3
-"""
-Wild-Locate: automated Annual NLCD downloader.
-
-Downloads Massachusetts subsets of:
-  1) Annual NLCD Land Cover
-  2) Annual NLCD Fractional Impervious Surface
-
-Uses the official MRLC/USGS Annual NLCD WCS in its native
-CONUS Albers projection (EPSG:5070) at 30 m resolution.
-
-Outputs:
-    data/raw/nlcd/landcover_2025.tif
-    data/raw/nlcd/impervious_2025.tif
-
-Install:
-    pip install requests rasterio pyproj
-
-Run from the Wild-Locate repo root:
-    python src/data/nlcd/download.py
-"""
-
-from __future__ import annotations
 
 import argparse
 import math
@@ -73,9 +51,6 @@ TIMEOUT = 240
 # ---------------------------------------------------------
 
 def mass_bbox_5070():
-    """
-    Convert Massachusetts WGS84 bounding box into EPSG:5070.
-    """
     xmin, ymin, xmax, ymax = MASS_BBOX_WGS84
 
     transformer = Transformer.from_crs(

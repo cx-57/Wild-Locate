@@ -1,5 +1,3 @@
-"""Transport and validation checks only: never run a trained model or CLI."""
-
 from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
@@ -31,14 +29,37 @@ def test_catalog_and_liveness_do_not_predict(client):
     {"species": "Red Fox", "latitude": 42, "longitude": -181},
     {"species": "Red Fox", "latitude": True, "longitude": -71},
     {"species": "Red Fox", "latitude": "north", "longitude": -71},
+    {"species": "Red Fox", "latitude": "42", "longitude": -71},
     {"species": "", "latitude": 42, "longitude": -71},
+    {"species": "   ", "latitude": 42, "longitude": -71},
     {"species": "Red Fox", "latitude": 42, "longitude": -71, "extra": "ignored?"},
+    [],
+    None,
 ])
 def test_invalid_request_is_readable(client, payload):
     response = client.post("/predict", json=payload)
     assert response.status_code == 422
     assert response.json()["code"] == "invalid_request"
     assert isinstance(response.json()["detail"], str)
+
+
+def test_request_schema_preserves_documented_validation(client):
+    operation = client.get("/openapi.json").json()["paths"]["/predict"]["post"]
+    body = operation["requestBody"]
+    assert body["required"] is True
+    schema = body["content"]["application/json"]["schema"]
+    assert set(schema["required"]) == {"species", "latitude", "longitude"}
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["latitude"]["minimum"] == -90
+    assert schema["properties"]["longitude"]["maximum"] == 180
+
+
+def test_request_normalization_reaches_service(client, monkeypatch):
+    assess = Mock(side_effect=PredictionError("Unavailable", "data_unavailable", 503))
+    monkeypatch.setattr(api, "assess_habitat", assess)
+    response = client.post("/predict", json={"species": " Red Fox ", "latitude": 42, "longitude": -71})
+    assert response.status_code == 503
+    assess.assert_called_once_with("Red Fox", 42.0, -71.0)
 
 
 @pytest.mark.parametrize("status,code", [(422, "location_unavailable"), (503, "data_unavailable"), (500, "prediction_failed")])

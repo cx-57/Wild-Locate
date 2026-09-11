@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 import joblib
 import numpy as np
@@ -24,17 +21,17 @@ MODEL_DIR = ROOT / "data/processed/models"
 FEATURES_DIR = ROOT / "data/processed/features/species"
 
 
-def species_slug(species: str) -> str:
+def species_slug(species):
     return species.strip().lower().replace(" ", "_")
 
 
-def format_model_name(model_name: str) -> str:
+def format_model_name(model_name):
     if model_name == "RandomForest":
         return "Random Forest"
     return model_name
 
 
-def load_model_and_metadata(species: str) -> tuple[Any, dict[str, Any]]:
+def load_model_and_metadata(species):
     slug = species_slug(species)
     model_path = MODEL_DIR / f"{slug}.joblib"
     metrics_path = MODEL_DIR / f"{slug}_metrics.json"
@@ -51,7 +48,7 @@ def load_model_and_metadata(species: str) -> tuple[Any, dict[str, Any]]:
     return model, metrics
 
 
-def validate_lat_lon(latitude: float, longitude: float) -> None:
+def validate_lat_lon(latitude, longitude):
     if latitude is None or longitude is None:
         raise ValueError("Latitude and longitude are required.")
     if not (-90 <= latitude <= 90):
@@ -60,7 +57,7 @@ def validate_lat_lon(latitude: float, longitude: float) -> None:
         raise ValueError(f"Invalid longitude {longitude}. Longitude must be between -180 and 180.")
 
 
-def build_prediction_frame(features: dict[str, float], predictor_names: list[str]) -> pd.DataFrame:
+def build_prediction_frame(features, predictor_names):
     missing = [name for name in predictor_names if name not in features]
     if missing:
         raise ValueError(
@@ -78,7 +75,7 @@ def build_prediction_frame(features: dict[str, float], predictor_names: list[str
     return pd.DataFrame([[features[name] for name in predictor_names]], columns=predictor_names)
 
 
-def load_comparison_scores(model: Any, predictor_names: list[str], species: str) -> tuple[np.ndarray, pd.DataFrame]:
+def load_comparison_scores(model, predictor_names, species):
     slug = species_slug(species)
     comparison_file = FEATURES_DIR / f"{slug}_features.csv"
 
@@ -98,7 +95,7 @@ def load_comparison_scores(model: Any, predictor_names: list[str], species: str)
     return np.asarray(scores, dtype=float), comparison_df
 
 
-def percentile_of_score(score: float, comparison_scores: np.ndarray) -> int:
+def percentile_of_score(score, comparison_scores):
     if comparison_scores.size == 0:
         raise ValueError("Cannot compute percentile because the comparison dataset is empty.")
 
@@ -108,7 +105,7 @@ def percentile_of_score(score: float, comparison_scores: np.ndarray) -> int:
     return max(0, min(100, percentile))
 
 
-def category_for_percentile(percentile: int) -> str:
+def category_for_percentile(percentile):
     if percentile < 20:
         return "Very Low"
     if percentile < 40:
@@ -121,17 +118,17 @@ def category_for_percentile(percentile: int) -> str:
 
 
 def print_results(
-    species: str,
-    latitude: float,
-    longitude: float,
-    score: float,
-    percentile: int,
-    category: str,
-    model_name: str,
-    presence_count: int,
-    feature_values: dict[str, float],
-    predictor_names: list[str],
-) -> None:
+    species,
+    latitude,
+    longitude,
+    score,
+    percentile,
+    category,
+    model_name,
+    presence_count,
+    feature_values,
+    predictor_names,
+):
     print("Wild-Locate Habitat Assessment")
     print("------------------------------")
     print()
@@ -159,8 +156,7 @@ def print_results(
         print(f"{name}: {feature_values[name]}")
 
 
-def predict_species(species: str, latitude: float, longitude: float) -> dict[str, Any]:
-    """Run the existing prediction calculation for the CLI, API, and desktop app."""
+def predict_species(species, latitude, longitude):
     species = species.strip()
     if not species:
         raise ValueError("Species name cannot be empty.")
@@ -206,7 +202,7 @@ def predict_species(species: str, latitude: float, longitude: float) -> dict[str
     }
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(
         description="Predict relative habitat suitability for a species at a Massachusetts location.",
     )

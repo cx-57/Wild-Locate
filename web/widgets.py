@@ -1,5 +1,3 @@
-"""Small Qt widgets for the desktop view. Artwork is decorative, not a map."""
-
 import math
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
@@ -7,7 +5,7 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap, QI
 from PyQt6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
 
 
-def label(text: str, role: str = "", wrap: bool = False) -> QLabel:
+def label(text, role="", wrap=False):
     widget = QLabel(text)
     widget.setTextFormat(Qt.TextFormat.PlainText)
     widget.setObjectName(role)
@@ -15,13 +13,13 @@ def label(text: str, role: str = "", wrap: bool = False) -> QLabel:
     return widget
 
 
-def divider() -> QFrame:
+def divider():
     widget = QFrame()
     widget.setObjectName("divider")
     return widget
 
 
-def draw_mark(painter: QPainter, size: float) -> None:
+def draw_mark(painter, size):
     painter.save()
     painter.scale(size / 40, size / 40)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -38,7 +36,7 @@ def draw_mark(painter: QPainter, size: float) -> None:
     painter.restore()
 
 
-def app_icon() -> QIcon:
+def app_icon():
     pixmap = QPixmap(80, 80)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
@@ -106,7 +104,7 @@ class SuitabilityGauge(QWidget):
         self.setMinimumHeight(72)
         self.setToolTip("Percentile categories: 0–19 Very Low; 20–39 Low; 40–59 Moderate; 60–79 High; 80–100 Very High.")
 
-    def set_percentile(self, percentile: int):
+    def set_percentile(self, percentile):
         self.percentile = percentile
         self.setAccessibleName(f"Habitat suitability: {percentile}th percentile on a scale of 0 to 100")
         self.update()
@@ -135,7 +133,7 @@ class SuitabilityGauge(QWidget):
 
 
 class Disclosure(QFrame):
-    def __init__(self, title: str, role="environment"):
+    def __init__(self, title, role="environment"):
         super().__init__()
         self.setObjectName(role)
         self.title = title
@@ -155,7 +153,7 @@ class Disclosure(QFrame):
         self.layout.addWidget(self.body)
         self.body.hide()
 
-    def set_expanded(self, expanded: bool):
+    def set_expanded(self, expanded):
         self.toggle.setChecked(expanded)
         self.toggle.setText(f"{'−' if expanded else '+'}   {self.title}")
         self.body.setVisible(expanded)

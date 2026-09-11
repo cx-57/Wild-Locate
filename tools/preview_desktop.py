@@ -1,5 +1,3 @@
-"""Render actual Qt widgets for layout review. Never runs a prediction."""
-
 import os
 from pathlib import Path
 import sys

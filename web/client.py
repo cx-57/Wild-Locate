@@ -1,7 +1,3 @@
-"""Nonblocking Qt transport to the shared Python prediction service."""
-
-from __future__ import annotations
-
 import json
 from pathlib import Path
 import sys
@@ -28,34 +24,32 @@ class PredictionClient(QObject):
             interpreter = interpreter.with_name("python.exe")
         self.process.setProgram(str(interpreter))
         self.process.setArguments(["-u", "-m", "src.prediction_worker"])
-        self.process.started.connect(self._send_pending)
-        self.process.readyReadStandardOutput.connect(self._read_output)
-        self.process.readyReadStandardError.connect(self._read_error)
-        self.process.errorOccurred.connect(self._process_error)
-        self.process.finished.connect(self._finished)
+        self.process.started.connect(self.send_pending)
+        self.process.readyReadStandardOutput.connect(self.read_output)
+        self.process.readyReadStandardError.connect(self.read_error)
+        self.process.errorOccurred.connect(self.process_error)
+        self.process.finished.connect(self.finished)
         self.busy = False
         self._buffer = b""
-        self._stderr = b""
         self._pending = None
 
-    def analyze(self, species: str, latitude: float, longitude: float):
+    def analyze(self, species, latitude, longitude):
         if self.busy:
             return
         self.busy = True
         self._pending = {"species": species, "latitude": latitude, "longitude": longitude}
         self._buffer = b""
-        self._stderr = b""
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.process.start()
         else:
-            self._send_pending()
+            self.send_pending()
 
-    def _send_pending(self):
+    def send_pending(self):
         if self._pending is not None:
             self.process.write((json.dumps(self._pending) + "\n").encode("utf-8"))
             self._pending = None
 
-    def _read_output(self):
+    def read_output(self):
         self._buffer += bytes(self.process.readAllStandardOutput())
         while b"\n" in self._buffer:
             line, self._buffer = self._buffer.split(b"\n", 1)
@@ -71,16 +65,16 @@ class PredictionClient(QObject):
             except (ValueError, KeyError, TypeError):
                 self.failed.emit("The analysis returned an unreadable response. Please try again.")
 
-    def _read_error(self):
-        self._stderr = (self._stderr + bytes(self.process.readAllStandardError()))[-65536:]
+    def read_error(self):
+        self.process.readAllStandardError()
 
-    def _process_error(self, error):
+    def process_error(self, error):
         if self.busy and error == QProcess.ProcessError.FailedToStart:
             self.busy = False
             self._pending = None
             self.failed.emit("The Python analysis process could not start. Launch Wild-Locate from its project virtual environment.")
 
-    def _finished(self, exit_code, exit_status):
+    def finished(self, exit_code, exit_status):
         if self.busy:
             self.busy = False
             self._pending = None

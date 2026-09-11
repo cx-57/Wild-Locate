@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 
-from __future__ import annotations
-
 import argparse
 import math
 import sys
 from pathlib import Path
-from typing import Any
 
 import geopandas as gpd
 import numpy as np
@@ -50,20 +47,20 @@ FEATURE_ORDER = [
     "distance_to_road_m",
 ]
 
-_CONTEXT_CACHE: dict[str, Any] | None = None
+_CONTEXT_CACHE = None
 
 
-def _get_paths() -> dict[str, Any]:
+def get_paths():
     return ENVIRONMENT_PATHS.validate()
 
 
-def _get_cached_context() -> dict[str, Any]:
+def get_cached_context():
     global _CONTEXT_CACHE
 
     if _CONTEXT_CACHE is not None:
         return _CONTEXT_CACHE
 
-    paths = _get_paths()
+    paths = get_paths()
     elevation_path = ensure_projected_elevation_raster()
 
     landcover_src = rasterio.open(paths["NLCD land cover"])
@@ -92,7 +89,7 @@ def _get_cached_context() -> dict[str, Any]:
     return _CONTEXT_CACHE
 
 
-def _project_point(latitude: float, longitude: float) -> tuple[float, float]:
+def project_point(latitude, longitude):
     if not (-90 <= latitude <= 90):
         raise ValueError(f"Invalid latitude {latitude}. Latitude must be between -90 and 90.")
     if not (-180 <= longitude <= 180):
@@ -103,12 +100,12 @@ def _project_point(latitude: float, longitude: float) -> tuple[float, float]:
     return float(x_5070), float(y_5070)
 
 
-def _validate_point_is_evaluable(
-    x_5070: float,
-    y_5070: float,
-    src: rasterio.io.DatasetReader,
-    label: str,
-) -> tuple[int, int]:
+def validate_point_is_evaluable(
+    x_5070,
+    y_5070,
+    src,
+    label,
+):
     bounds = src.bounds
 
     if x_5070 < bounds.left or x_5070 > bounds.right or y_5070 < bounds.bottom or y_5070 > bounds.top:
@@ -131,13 +128,13 @@ def _validate_point_is_evaluable(
     return row_idx, col_idx
 
 
-def _read_local_window(
-    src: rasterio.io.DatasetReader,
-    x_5070: float,
-    y_5070: float,
-    radius_m: float,
-) -> tuple[np.ndarray, np.ndarray, int, int, float, float]:
-    row_idx, col_idx = _validate_point_is_evaluable(x_5070, y_5070, src, src.name)
+def read_local_window(
+    src,
+    x_5070,
+    y_5070,
+    radius_m,
+):
+    row_idx, col_idx = validate_point_is_evaluable(x_5070, y_5070, src, src.name)
 
     pixel_size_x = abs(src.res[0])
     pixel_size_y = abs(src.res[1])
@@ -168,19 +165,19 @@ def _read_local_window(
     return data, valid_mask, local_row, local_col, pixel_size_x, pixel_size_y
 
 
-def _fraction(values: np.ndarray, class_ids: set[int]) -> float:
+def fraction(values, class_ids):
     if values.size == 0:
         return float("nan")
     return float(np.mean(np.isin(values, list(class_ids))))
 
 
-def _terrain_window_stats(
-    src: rasterio.io.DatasetReader,
-    x_5070: float,
-    y_5070: float,
-    radius_m: float,
-) -> tuple[float, float, float]:
-    data, valid_mask, local_row, local_col, pixel_size_x, pixel_size_y = _read_local_window(
+def terrain_window_stats(
+    src,
+    x_5070,
+    y_5070,
+    radius_m,
+):
+    data, valid_mask, local_row, local_col, pixel_size_x, pixel_size_y = read_local_window(
         src, x_5070, y_5070, radius_m
     )
 
@@ -214,7 +211,7 @@ def _terrain_window_stats(
     return elevation_m, mean_slope, ruggedness
 
 
-def _nearest_distance_m(geodata: gpd.GeoDataFrame, point: Point) -> float:
+def nearest_distance_m(geodata, point):
     if geodata.empty:
         return float("nan")
 
@@ -230,10 +227,10 @@ def _nearest_distance_m(geodata: gpd.GeoDataFrame, point: Point) -> float:
     return float(nearest_distances.min())
 
 
-def extract_features(latitude: float, longitude: float) -> dict[str, float]:
-    context = _get_cached_context()
+def extract_features(latitude, longitude):
+    context = get_cached_context()
 
-    x_5070, y_5070 = _project_point(latitude, longitude)
+    x_5070, y_5070 = project_point(latitude, longitude)
 
     landcover_src = context["landcover_src"]
     impervious_src = context["impervious_src"]
@@ -241,17 +238,17 @@ def extract_features(latitude: float, longitude: float) -> dict[str, float]:
     hydro_combined_gdf = context["hydro_combined_gdf"]
     roads_gdf = context["roads_gdf"]
 
-    _validate_point_is_evaluable(x_5070, y_5070, landcover_src, "NLCD land cover")
-    _validate_point_is_evaluable(x_5070, y_5070, impervious_src, "NLCD impervious surface")
-    _validate_point_is_evaluable(x_5070, y_5070, elevation_src, "USGS 3DEP elevation")
+    validate_point_is_evaluable(x_5070, y_5070, landcover_src, "NLCD land cover")
+    validate_point_is_evaluable(x_5070, y_5070, impervious_src, "NLCD impervious surface")
+    validate_point_is_evaluable(x_5070, y_5070, elevation_src, "USGS 3DEP elevation")
 
     point = Point(x_5070, y_5070)
 
-    features: dict[str, float] = {}
+    features = {}
 
     for radius_m in (250, 1000):
-        lc_data, lc_valid_mask, _, _, _, _ = _read_local_window(landcover_src, x_5070, y_5070, radius_m)
-        imp_data, imp_valid_mask, _, _, _, _ = _read_local_window(impervious_src, x_5070, y_5070, radius_m)
+        lc_data, lc_valid_mask, _, _, _, _ = read_local_window(landcover_src, x_5070, y_5070, radius_m)
+        imp_data, imp_valid_mask, _, _, _, _ = read_local_window(impervious_src, x_5070, y_5070, radius_m)
 
         lc_values = lc_data[lc_valid_mask]
         imp_values = imp_data[imp_valid_mask]
@@ -262,17 +259,17 @@ def extract_features(latitude: float, longitude: float) -> dict[str, float]:
             features[f"developed_fraction_{radius_m}m"] = float("nan")
             features[f"open_water_fraction_{radius_m}m"] = float("nan")
         else:
-            features[f"forest_fraction_{radius_m}m"] = _fraction(lc_values, VALID_CLASSES["forest"])
-            features[f"wetland_fraction_{radius_m}m"] = _fraction(lc_values, VALID_CLASSES["wetland"])
-            features[f"developed_fraction_{radius_m}m"] = _fraction(lc_values, VALID_CLASSES["developed"])
-            features[f"open_water_fraction_{radius_m}m"] = _fraction(lc_values, VALID_CLASSES["open_water"])
+            features[f"forest_fraction_{radius_m}m"] = fraction(lc_values, VALID_CLASSES["forest"])
+            features[f"wetland_fraction_{radius_m}m"] = fraction(lc_values, VALID_CLASSES["wetland"])
+            features[f"developed_fraction_{radius_m}m"] = fraction(lc_values, VALID_CLASSES["developed"])
+            features[f"open_water_fraction_{radius_m}m"] = fraction(lc_values, VALID_CLASSES["open_water"])
 
         if imp_values.size == 0:
             features[f"mean_impervious_{radius_m}m"] = float("nan")
         else:
             features[f"mean_impervious_{radius_m}m"] = float(np.nanmean(imp_values))
 
-    row_idx, col_idx = _validate_point_is_evaluable(x_5070, y_5070, elevation_src, "USGS 3DEP elevation")
+    row_idx, col_idx = validate_point_is_evaluable(x_5070, y_5070, elevation_src, "USGS 3DEP elevation")
     elevation_value = elevation_src.read(1, window=Window(col_idx, row_idx, 1, 1))[0, 0]
 
     if elevation_src.nodata is not None and elevation_value == elevation_src.nodata:
@@ -286,15 +283,15 @@ def extract_features(latitude: float, longitude: float) -> dict[str, float]:
 
     features["elevation_m"] = float(elevation_value)
 
-    _, mean_slope_250, _ = _terrain_window_stats(elevation_src, x_5070, y_5070, 250)
-    _, mean_slope_1000, ruggedness_1000 = _terrain_window_stats(elevation_src, x_5070, y_5070, 1000)
+    _, mean_slope_250, _ = terrain_window_stats(elevation_src, x_5070, y_5070, 250)
+    _, mean_slope_1000, ruggedness_1000 = terrain_window_stats(elevation_src, x_5070, y_5070, 1000)
 
     features["mean_slope_250m"] = float(mean_slope_250)
     features["mean_slope_1000m"] = float(mean_slope_1000)
     features["terrain_ruggedness_1000m"] = float(ruggedness_1000)
 
-    distance_to_water = _nearest_distance_m(hydro_combined_gdf, point)
-    distance_to_road = _nearest_distance_m(roads_gdf, point)
+    distance_to_water = nearest_distance_m(hydro_combined_gdf, point)
+    distance_to_road = nearest_distance_m(roads_gdf, point)
 
     features["distance_to_water_m"] = float(distance_to_water) if not np.isnan(distance_to_water) else float("nan")
     features["distance_to_road_m"] = float(distance_to_road) if not np.isnan(distance_to_road) else float("nan")
@@ -316,20 +313,20 @@ def extract_features(latitude: float, longitude: float) -> dict[str, float]:
     return {key: features[key] for key in FEATURE_ORDER}
 
 
-def _print_feature_dict(features: dict[str, float]) -> None:
+def print_feature_dict(features):
     print("Features:")
     for key in FEATURE_ORDER:
         print(f"  {key}: {features[key]}")
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(description="Extract environmental features at a latitude/longitude point.")
     parser.add_argument("--lat", type=float, required=True, help="Latitude in EPSG:4326.")
     parser.add_argument("--lon", type=float, required=True, help="Longitude in EPSG:4326.")
     args = parser.parse_args()
 
     features = extract_features(args.lat, args.lon)
-    _print_feature_dict(features)
+    print_feature_dict(features)
 
 
 if __name__ == "__main__":

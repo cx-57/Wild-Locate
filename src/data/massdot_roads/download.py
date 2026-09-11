@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-from __future__ import annotations
-
 import argparse
 import zipfile
 from pathlib import Path
@@ -11,7 +9,7 @@ import requests
 DEFAULT_OUTPUT = Path("data/raw/massdot_roads/massachusetts_roads.zip")
 
 
-def download_roads(output_path: Path):
+def download_roads(output_path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     url = "https://s3.us-east-1.amazonaws.com/download.massgis.digital.mass.gov/shapefiles/state/MassDOT_Roads_SHP.zip"

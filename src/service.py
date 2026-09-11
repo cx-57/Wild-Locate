@@ -1,11 +1,6 @@
-"""Shared validation and error boundary for the API and desktop worker."""
-
-from __future__ import annotations
-
 import logging
 import math
 from threading import Lock
-from typing import Any
 
 from src.catalog import SUPPORTED_SPECIES
 from src.predict import predict_species, validate_lat_lon
@@ -17,13 +12,13 @@ _prediction_lock = Lock()
 
 
 class PredictionError(Exception):
-    def __init__(self, message: str, code: str, status_code: int = 422):
+    def __init__(self, message, code, status_code=422):
         super().__init__(message)
         self.code = code
         self.status_code = status_code
 
 
-def assess_habitat(species: str, latitude: float, longitude: float) -> dict[str, Any]:
+def assess_habitat(species, latitude, longitude):
     species = species.strip() if isinstance(species, str) else ""
     canonical = next((name for name in SUPPORTED_SPECIES if name.casefold() == species.casefold()), None)
     if canonical is None:

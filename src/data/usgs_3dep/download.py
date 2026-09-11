@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-from __future__ import annotations
-
 import argparse
 from pathlib import Path
 
@@ -13,7 +11,7 @@ DEFAULT_BBOX = (-73.60, 41.10, -69.80, 42.95)
 DEFAULT_OUTPUT = Path("data/raw/usgs_3dep/elevation_3dep.tif")
 
 
-def download_elevation(bbox, output_path: Path, width: int = 2400, height: int = 2400):
+def download_elevation(bbox, output_path, width=2400, height=2400):
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     params = {

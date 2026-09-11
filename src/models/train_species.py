@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 
-from __future__ import annotations
-
 import argparse
 import json
 from pathlib import Path
-from typing import Any
 
 import joblib
 import numpy as np
@@ -37,18 +34,18 @@ EXCLUDED_COLUMNS = {
 MODEL_COMPLEXITY = {"LogisticRegression": 0, "RandomForest": 1, "XGBoost": 2}
 
 
-def species_slug(species: str) -> str:
+def species_slug(species):
     return species.strip().lower().replace(" ", "_")
 
 
-def load_dataset(dataset_file: Path | str) -> pd.DataFrame:
+def load_dataset(dataset_file):
     df = pd.read_csv(dataset_file)
     if TARGET_COLUMN not in df.columns:
         raise ValueError(f"Target column '{TARGET_COLUMN}' not found in {dataset_file}")
     return df
 
 
-def infer_feature_columns(df: pd.DataFrame) -> list[str]:
+def infer_feature_columns(df):
     feature_columns = [
         column
         for column in df.columns
@@ -72,7 +69,7 @@ def infer_feature_columns(df: pd.DataFrame) -> list[str]:
     return feature_columns
 
 
-def build_spatial_groups(df: pd.DataFrame, block_size_m: int) -> np.ndarray:
+def build_spatial_groups(df, block_size_m):
     if block_size_m <= 0:
         raise ValueError("block_size_m must be positive.")
 
@@ -87,7 +84,7 @@ def build_spatial_groups(df: pd.DataFrame, block_size_m: int) -> np.ndarray:
     return groups
 
 
-def build_estimator(model_name: str) -> Pipeline:
+def build_estimator(model_name):
     if model_name == "LogisticRegression":
         return Pipeline(
             steps=[
@@ -156,7 +153,7 @@ def build_estimator(model_name: str) -> Pipeline:
     raise ValueError(f"Unsupported model type: {model_name}")
 
 
-def build_models() -> list[dict[str, Any]]:
+def build_models():
     models = [
         {"name": "LogisticRegression", "estimator": None},
         {"name": "RandomForest", "estimator": None},
@@ -173,12 +170,12 @@ def build_models() -> list[dict[str, Any]]:
 
 
 def select_spatial_splits(
-    df: pd.DataFrame,
-    feature_columns: list[str],
-    y: pd.Series,
-) -> tuple[np.ndarray, list[tuple[np.ndarray, np.ndarray]], int, list[str]]:
+    df,
+    feature_columns,
+    y,
+):
     candidate_block_sizes = [10000, 15000, 20000, 25000, 30000, 40000, 50000]
-    last_error: Exception | None = None
+    last_error = None
 
     X = df[feature_columns]
 
@@ -192,7 +189,7 @@ def select_spatial_splits(
             last_error = exc
             continue
 
-        fold_validity_errors: list[str] = []
+        fold_validity_errors = []
         for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
             y_train = y.iloc[train_idx]
             y_val = y.iloc[val_idx]
@@ -230,21 +227,21 @@ def select_spatial_splits(
 
 
 def evaluate_models(
-    df: pd.DataFrame,
-    feature_columns: list[str],
-    splits: list[tuple[np.ndarray, np.ndarray]],
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    df,
+    feature_columns,
+    splits,
+):
     X = df[feature_columns]
     y = df[TARGET_COLUMN].astype(int)
 
     model_specs = build_models()
-    model_results: list[dict[str, Any]] = []
+    model_results = []
 
     for model_info in model_specs:
         model_name = model_info["name"]
-        fold_metrics: list[dict[str, Any]] = []
-        fold_roc_values: list[float] = []
-        fold_pr_values: list[float] = []
+        fold_metrics = []
+        fold_roc_values = []
+        fold_pr_values = []
 
         for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
             X_train = X.iloc[train_idx].copy()
@@ -300,7 +297,7 @@ def evaluate_models(
     return model_results, summary
 
 
-def pick_best_model(model_results: list[dict[str, Any]]) -> dict[str, Any]:
+def pick_best_model(model_results):
     sorted_results = sorted(
         model_results,
         key=lambda item: (
@@ -313,11 +310,11 @@ def pick_best_model(model_results: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def top_features_for_model(
-    model_name: str,
-    fitted_pipeline: Pipeline,
-    feature_columns: list[str],
-    top_n: int = 5,
-) -> list[dict[str, float | str]]:
+    model_name,
+    fitted_pipeline,
+    feature_columns,
+    top_n=5,
+):
     if model_name == "LogisticRegression":
         coefficients = fitted_pipeline.named_steps["model"].coef_[0]
         ranked = sorted(
@@ -352,12 +349,12 @@ def top_features_for_model(
     raise ValueError(f"Unsupported model for feature interpretation: {model_name}")
 
 
-def save_metrics_json(metrics_path: Path, payload: dict[str, Any]) -> None:
+def save_metrics_json(metrics_path, payload):
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     metrics_path.write_text(json.dumps(payload, indent=2))
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(
         description="Train and evaluate species-specific habitat suitability models using spatial CV.",
     )
@@ -460,7 +457,7 @@ def main() -> None:
 
     joblib.dump(selected_pipeline, model_path)
 
-    metrics_payload: dict[str, Any] = {
+    metrics_payload = {
         "species": species,
         "species_slug": slug,
         "total_rows": int(len(df)),

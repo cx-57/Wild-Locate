@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 
-from __future__ import annotations
-
 import argparse
 import math
 import re
 import sys
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -26,7 +23,7 @@ MAMMAL_POOL_FILE = Path("data/processed/samples/massachusetts_mammal_pool.csv")
 DEFAULT_MAX_MAMMAL_POOL = 50000
 
 
-def species_slug(species_name: str) -> str:
+def species_slug(species_name):
     slug = re.sub(r"[^a-z0-9]+", "_", species_name.strip().lower())
     slug = slug.strip("_")
     if not slug:
@@ -34,7 +31,7 @@ def species_slug(species_name: str) -> str:
     return slug
 
 
-def _api_get(endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+def api_get(endpoint, params=None):
     response = requests.get(f"{API_BASE}{endpoint}", params=params, timeout=60)
     response.raise_for_status()
     data = response.json()
@@ -43,28 +40,28 @@ def _api_get(endpoint: str, params: dict[str, Any] | None = None) -> dict[str, A
     return data
 
 
-def _find_place_id(place_name: str) -> int:
+def find_place_id(place_name):
     place_name = place_name.strip()
     if not place_name:
         raise ValueError("Place name is required.")
 
-    data = _api_get("/places/autocomplete", {"q": place_name, "per_page": 20})
+    data = api_get("/places/autocomplete", {"q": place_name, "per_page": 20})
     results = data.get("results", [])
     if not results:
         raise RuntimeError(f"Could not find place: {place_name}")
     return int(results[0]["id"])
 
 
-def _download_mammal_pool(place_name: str = "Massachusetts") -> pd.DataFrame:
+def download_mammal_pool(place_name="Massachusetts"):
     mammals = resolve_species("Mammalia")
-    place_id = _find_place_id(place_name)
+    place_id = find_place_id(place_name)
 
-    rows: list[dict[str, Any]] = []
+    rows = []
     id_above = 0
     total_rows = 0
 
     while total_rows < DEFAULT_MAX_MAMMAL_POOL:
-        params: dict[str, Any] = {
+        params = {
             "taxon_id": mammals["taxon_id"],
             "place_id": place_id,
             "quality_grade": "research",
@@ -76,7 +73,7 @@ def _download_mammal_pool(place_name: str = "Massachusetts") -> pd.DataFrame:
             "id_above": id_above,
         }
 
-        data = _api_get("/observations", params)
+        data = api_get("/observations", params)
         batch = data.get("results", [])
         if not batch:
             break
@@ -132,7 +129,7 @@ def _download_mammal_pool(place_name: str = "Massachusetts") -> pd.DataFrame:
     return df
 
 
-def load_or_create_mammal_pool(refresh_pool: bool = False) -> pd.DataFrame:
+def load_or_create_mammal_pool(refresh_pool=False):
     if MAMMAL_POOL_FILE.exists() and not refresh_pool:
         pool_df = pd.read_csv(MAMMAL_POOL_FILE)
         required_columns = {
@@ -153,13 +150,13 @@ def load_or_create_mammal_pool(refresh_pool: bool = False) -> pd.DataFrame:
             )
         return pool_df
 
-    pool_df = _download_mammal_pool()
+    pool_df = download_mammal_pool()
     MAMMAL_POOL_FILE.parent.mkdir(parents=True, exist_ok=True)
     pool_df.to_csv(MAMMAL_POOL_FILE, index=False)
     return pool_df
 
 
-def _project_to_5070(df: pd.DataFrame) -> pd.DataFrame:
+def project_to_5070(df):
     transformer = Transformer.from_crs("EPSG:4326", "EPSG:5070", always_xy=True)
     x_5070, y_5070 = transformer.transform(df["longitude"].to_numpy(), df["latitude"].to_numpy())
 
@@ -169,7 +166,7 @@ def _project_to_5070(df: pd.DataFrame) -> pd.DataFrame:
     return projected
 
 
-def _filter_mammal_pool(pool_df: pd.DataFrame, target_taxon_id: int | None) -> pd.DataFrame:
+def filter_mammal_pool(pool_df, target_taxon_id):
     if pool_df is None or pool_df.empty:
         return pool_df
 
@@ -199,12 +196,12 @@ def _filter_mammal_pool(pool_df: pd.DataFrame, target_taxon_id: int | None) -> p
     return filtered
 
 
-def _compute_min_distance_to_presence(
-    candidate_x: np.ndarray,
-    candidate_y: np.ndarray,
-    presence_x: np.ndarray,
-    presence_y: np.ndarray,
-) -> np.ndarray:
+def compute_min_distance_to_presence(
+    candidate_x,
+    candidate_y,
+    presence_x,
+    presence_y,
+):
     distances = np.full(candidate_x.shape[0], np.inf, dtype=float)
 
     for idx, (cx, cy) in enumerate(zip(candidate_x, candidate_y)):
@@ -215,18 +212,18 @@ def _compute_min_distance_to_presence(
     return distances
 
 
-def _spatial_thin(df: pd.DataFrame, thinning_distance_m: float, random_state: int) -> pd.DataFrame:
+def spatial_thin(df, thinning_distance_m, random_state):
     if df.empty:
         return df
 
-    projected = _project_to_5070(df)
+    projected = project_to_5070(df)
     projected["grid_x"] = np.floor(projected["x_5070"] / thinning_distance_m).astype(int)
     projected["grid_y"] = np.floor(projected["y_5070"] / thinning_distance_m).astype(int)
 
     rng = np.random.default_rng(random_state)
     order = rng.permutation(len(projected))
-    kept: list[int] = []
-    seen_cells: set[tuple[int, int]] = set()
+    kept = []
+    seen_cells = set()
 
     for idx in order:
         row = projected.iloc[idx]
@@ -240,12 +237,12 @@ def _spatial_thin(df: pd.DataFrame, thinning_distance_m: float, random_state: in
 
 
 def generate_background(
-    species_name: str,
-    background_ratio: float = 3.0,
-    exclusion_distance_m: float = 1000,
-    thinning_distance_m: float = 500,
-    random_state: int = 42,
-) -> pd.DataFrame:
+    species_name,
+    background_ratio=3.0,
+    exclusion_distance_m=1000,
+    thinning_distance_m=500,
+    random_state=42,
+):
     if background_ratio <= 0:
         raise ValueError("background_ratio must be greater than 0.")
     if exclusion_distance_m < 0:
@@ -273,22 +270,22 @@ def generate_background(
         raise RuntimeError(f"No usable presence points found in {presence_file}.")
 
     pool_df = load_or_create_mammal_pool()
-    candidate_df = _filter_mammal_pool(pool_df, target_taxon_id)
+    candidate_df = filter_mammal_pool(pool_df, target_taxon_id)
 
     if candidate_df.empty:
         raise RuntimeError(
             f"No usable mammal-pool candidates remain after quality filtering for {species_name}."
         )
 
-    projected_presence = _project_to_5070(presence_df)
-    projected_candidates = _project_to_5070(candidate_df)
+    projected_presence = project_to_5070(presence_df)
+    projected_candidates = project_to_5070(candidate_df)
 
     presence_x = projected_presence["x_5070"].to_numpy(dtype=float)
     presence_y = projected_presence["y_5070"].to_numpy(dtype=float)
     candidate_x = projected_candidates["x_5070"].to_numpy(dtype=float)
     candidate_y = projected_candidates["y_5070"].to_numpy(dtype=float)
 
-    min_distances = _compute_min_distance_to_presence(candidate_x, candidate_y, presence_x, presence_y)
+    min_distances = compute_min_distance_to_presence(candidate_x, candidate_y, presence_x, presence_y)
     projected_candidates["distance_to_presence_m"] = min_distances
 
     projected_candidates = projected_candidates[
@@ -300,7 +297,7 @@ def generate_background(
             f"No candidate background points remain after excluding all locations within {exclusion_distance_m} m of known {species_name} presences."
         )
 
-    thinned_candidates = _spatial_thin(
+    thinned_candidates = spatial_thin(
         projected_candidates[["latitude", "longitude", "observation_id", "taxon_id", "taxon_name", "common_name"]].copy(),
         thinning_distance_m,
         random_state,
@@ -342,7 +339,7 @@ def generate_background(
     return sample_df
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(
         description="Generate target-group background points for a species in Massachusetts.",
     )

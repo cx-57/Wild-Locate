@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 
-from __future__ import annotations
-
 import argparse
 import re
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 import requests
@@ -27,7 +24,7 @@ OBSERVATION_COLUMNS = [
 ]
 
 
-def species_slug(species_name: str) -> str:
+def species_slug(species_name):
     slug = re.sub(r"[^a-z0-9]+", "_", species_name.strip().lower())
     slug = slug.strip("_")
     if not slug:
@@ -35,13 +32,13 @@ def species_slug(species_name: str) -> str:
     return slug
 
 
-def _normalize_name(value: str | None) -> str:
+def normalize_name(value):
     if value is None:
         return ""
     return re.sub(r"[^a-z0-9]+", " ", value.strip().lower()).strip()
 
 
-def _api_get(endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+def api_get(endpoint, params=None):
     response = requests.get(f"{API_BASE}{endpoint}", params=params, timeout=60)
     response.raise_for_status()
     data = response.json()
@@ -50,33 +47,33 @@ def _api_get(endpoint: str, params: dict[str, Any] | None = None) -> dict[str, A
     return data
 
 
-def _find_place_id(place_name: str) -> int:
+def find_place_id(place_name):
     place_name = place_name.strip()
     if not place_name:
         raise ValueError("Place name is required.")
 
-    data = _api_get("/places/autocomplete", {"q": place_name, "per_page": 20})
+    data = api_get("/places/autocomplete", {"q": place_name, "per_page": 20})
     results = data.get("results", [])
     if not results:
         raise RuntimeError(f"Could not find place: {place_name}")
 
-    normalized_query = _normalize_name(place_name)
+    normalized_query = normalize_name(place_name)
     for result in results:
         if normalized_query in {
-            _normalize_name(result.get("display_name")),
-            _normalize_name(result.get("name")),
+            normalize_name(result.get("display_name")),
+            normalize_name(result.get("name")),
         }:
             return int(result["id"])
 
     return int(results[0]["id"])
 
 
-def resolve_species(species_name: str) -> dict[str, Any]:
+def resolve_species(species_name):
     if species_name is None or not species_name.strip():
         raise ValueError("Species name is required.")
 
-    normalized_query = _normalize_name(species_name)
-    data = _api_get("/taxa/autocomplete", {"q": species_name, "per_page": 20})
+    normalized_query = normalize_name(species_name)
+    data = api_get("/taxa/autocomplete", {"q": species_name, "per_page": 20})
     results = data.get("results", [])
 
     if not results:
@@ -92,7 +89,7 @@ def resolve_species(species_name: str) -> dict[str, Any]:
             taxon.get("scientific_name"),
             taxon.get("name"),
         ]
-        if any(_normalize_name(name) == normalized_query for name in taxon_names if name):
+        if any(normalize_name(name) == normalized_query for name in taxon_names if name):
             exact_matches.append(taxon)
 
     if not exact_matches:
@@ -118,7 +115,7 @@ def resolve_species(species_name: str) -> dict[str, Any]:
     }
 
 
-def _extract_observation_row(obs: dict[str, Any]) -> dict[str, Any] | None:
+def extract_observation_row(obs):
     geojson = obs.get("geojson") or {}
     coordinates = geojson.get("coordinates")
     if not coordinates or len(coordinates) < 2:
@@ -154,21 +151,21 @@ def _extract_observation_row(obs: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def download_species_observations(
-    species_name: str,
-    place_name: str = "Massachusetts",
-    max_observations: int = DEFAULT_MAX_OBSERVATIONS,
-) -> pd.DataFrame:
+    species_name,
+    place_name="Massachusetts",
+    max_observations=DEFAULT_MAX_OBSERVATIONS,
+):
     species = resolve_species(species_name)
-    place_id = _find_place_id(place_name)
+    place_id = find_place_id(place_name)
 
     if max_observations <= 0:
         raise ValueError("max_observations must be greater than 0.")
 
-    rows: list[dict[str, Any]] = []
+    rows = []
     id_above = 0
 
     while len(rows) < max_observations:
-        params: dict[str, Any] = {
+        params = {
             "taxon_id": species["taxon_id"],
             "place_id": place_id,
             "quality_grade": "research",
@@ -180,7 +177,7 @@ def download_species_observations(
             "id_above": id_above,
         }
 
-        data = _api_get("/observations", params)
+        data = api_get("/observations", params)
         batch = data.get("results", [])
         if not batch:
             break
@@ -188,7 +185,7 @@ def download_species_observations(
         for obs in batch:
             if len(rows) >= max_observations:
                 break
-            row = _extract_observation_row(obs)
+            row = extract_observation_row(obs)
             if row is not None:
                 rows.append(row)
 
@@ -206,7 +203,7 @@ def download_species_observations(
     return raw_df
 
 
-def clean_species_observations(df: pd.DataFrame) -> pd.DataFrame:
+def clean_species_observations(df):
     if df is None or df.empty:
         return pd.DataFrame(columns=OBSERVATION_COLUMNS)
 
@@ -235,14 +232,14 @@ def clean_species_observations(df: pd.DataFrame) -> pd.DataFrame:
     return cleaned
 
 
-def save_cleaned_observations(df: pd.DataFrame, species_name: str) -> Path:
+def save_cleaned_observations(df, species_name):
     output_path = Path("data/processed/samples") / f"{species_slug(species_name)}_occurrences.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
     return output_path
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(
         description="Resolve a species, download Massachusetts iNaturalist observations, and save cleaned occurrences.",
     )

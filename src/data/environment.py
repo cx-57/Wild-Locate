@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 
-from __future__ import annotations
-
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class DatasetPaths:
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(self, root=None):
         root = root or ROOT
 
         self.nlcd_landcover = root / "data" / "raw" / "nlcd" / "landcover_2025.tif"
@@ -18,7 +16,7 @@ class DatasetPaths:
         self.massdep_hydrography_arc = root / "data" / "raw" / "massdep_hydrography" / "HYDRO25K_ARC.shp"
         self.massdot_roads = root / "data" / "raw" / "massdot_roads" / "EOTROADS_ARC.shp"
 
-    def validate(self) -> dict[str, Path]:
+    def validate(self):
         resolved = {
             "NLCD land cover": self.nlcd_landcover,
             "NLCD impervious surface": self.nlcd_impervious,

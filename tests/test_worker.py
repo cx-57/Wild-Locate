@@ -1,5 +1,3 @@
-"""Test desktop transport in memory, with no CLI or model invocation."""
-
 import io
 import json
 

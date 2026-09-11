@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-from __future__ import annotations
-
 import argparse
 import sys
 from pathlib import Path
@@ -20,13 +18,13 @@ DEFAULT_OUTPUT_DIR = Path("data/processed/features/species")
 DEFAULT_FAILURE_THRESHOLD = 0.05
 
 
-def species_slug(species_name: str) -> str:
+def species_slug(species_name):
     slug = species_name.strip().lower().replace(" ", "_")
     slug = "_".join(part for part in slug.split("_") if part)
     return slug
 
 
-def _validate_training_points(df: pd.DataFrame) -> None:
+def validate_training_points(df):
     required_columns = {"latitude", "longitude", "presence"}
     missing = sorted(required_columns.difference(df.columns))
     if missing:
@@ -46,10 +44,10 @@ def _validate_training_points(df: pd.DataFrame) -> None:
 
 
 def build_species_dataset(
-    species_name: str,
-    training_points_file: Path | str | None = None,
-    output_file: Path | str | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+    species_name,
+    training_points_file=None,
+    output_file=None,
+):
     slug = species_slug(species_name)
     training_path = Path(training_points_file) if training_points_file else DEFAULT_INPUT_DIR / f"{slug}_training_points.csv"
 
@@ -59,19 +57,19 @@ def build_species_dataset(
         )
 
     training_df = pd.read_csv(training_path)
-    _validate_training_points(training_df)
+    validate_training_points(training_df)
 
     output_path = Path(output_file) if output_file else DEFAULT_OUTPUT_DIR / f"{slug}_features.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    successful_rows: list[dict[str, float | int]] = []
-    failed_rows: list[dict[str, object]] = []
+    successful_rows = []
+    failed_rows = []
 
     total_rows = len(training_df)
     presence_count = int((training_df["presence"] == 1).sum())
     background_count = int((training_df["presence"] == 0).sum())
 
-    feature_columns: list[str] | None = None
+    feature_columns = None
 
     for row_idx, row in training_df.iterrows():
         latitude = float(row["latitude"])
@@ -95,7 +93,7 @@ def build_species_dataset(
         if feature_columns is None:
             feature_columns = list(features.keys())
 
-        combined_row: dict[str, float | int] = {
+        combined_row = {
             "latitude": latitude,
             "longitude": longitude,
             "presence": presence,
@@ -159,7 +157,7 @@ def build_species_dataset(
     return output_df, pd.DataFrame(failed_rows)
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(
         description="Build a species-specific ML feature table by running the canonical environmental extractor on every training-point row.",
     )
