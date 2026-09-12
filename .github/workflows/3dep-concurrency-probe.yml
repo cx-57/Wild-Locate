@@ -1,0 +1,56 @@
+name: 3dep-concurrency-probe
+
+on:
+  push:
+    branches:
+      - clean-habitat-rebuild
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install probe dependency
+        run: python -m pip install requests
+      - name: Compare concurrent and serial 3DEP requests
+        run: |
+          python - <<'PY'
+          from concurrent.futures import ThreadPoolExecutor
+          import requests
+
+          url = 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage'
+          bboxes = [
+              (1438800, 718800, 1561200, 841200),
+              (1438800, 358800, 1561200, 481200),
+              (1438800, 238800, 1561200, 361200),
+          ]
+
+          def fetch(bbox):
+              params = {
+                  'bbox': ','.join(map(str, bbox)), 'bboxSR': 5070, 'imageSR': 5070,
+                  'size': '1360,1360', 'format': 'tiff', 'pixelType': 'F32',
+                  'noData': -9999, 'interpolation': 'RSP_BilinearInterpolation', 'f': 'image',
+              }
+              try:
+                  with requests.get(url, params=params, timeout=240, stream=True) as response:
+                      status = response.status_code
+                      total = 0
+                      for chunk in response.iter_content(1024 * 1024):
+                          total += len(chunk)
+                      return bbox, status, total
+              except Exception as exc:
+                  return bbox, type(exc).__name__, str(exc)
+
+          print('CONCURRENT')
+          with ThreadPoolExecutor(max_workers=3) as executor:
+              for result in executor.map(fetch, bboxes):
+                  print(result)
+
+          print('SERIAL')
+          for bbox in bboxes:
+              print(fetch(bbox))
+          PY
