@@ -25,6 +25,7 @@ from wildlocate.core.features.extract import (
 SCHEMA = 'regional-raster-v1'
 TILE_SIZE = 120000
 MARGIN = 1200
+EXPECTED_CRS = rasterio.crs.CRS.from_epsg(5070)
 CLASSES = {'forest': {41,42,43}, 'wetland': {90,95}, 'developed': {21,22,23,24},
            'open_water': {11}, 'shrubland': {52}, 'grassland': {71}, 'barren': {31},
            'cropland': {81,82}}
@@ -57,6 +58,33 @@ def initialize(region, progress=print):
     return root
 
 
+def _valid_raster(path, x, y):
+    """Return True only for a readable one-band EPSG:5070 raster covering x/y."""
+    path = Path(path)
+    try:
+        if not path.is_file() or path.stat().st_size <= 0:
+            return False
+        with rasterio.open(path) as src:
+            bounds = src.bounds
+            if src.crs != EXPECTED_CRS or src.count != 1 or src.width <= 0 or src.height <= 0:
+                return False
+            if not all(math.isfinite(value) for value in (bounds.left, bounds.bottom, bounds.right, bounds.top)):
+                return False
+            if not (bounds.left < bounds.right and bounds.bottom < bounds.top):
+                return False
+            if not (bounds.left <= x <= bounds.right and bounds.bottom <= y <= bounds.top):
+                return False
+            row, col = src.index(x, y)
+            if row < 0 or row >= src.height or col < 0 or col >= src.width:
+                return False
+            # Opening metadata alone can succeed for some truncated TIFFs. Reading
+            # the requested cell proves the data block itself is accessible.
+            src.read(1, window=Window(col, row, 1, 1))
+        return True
+    except (OSError, ValueError, rasterio.errors.RasterioError):
+        return False
+
+
 def tile_paths(region, x, y, progress=None):
     from wildlocate.core.data.nlcd.download import (
         download_tile, LANDCOVER_WCS, LANDCOVER_COVERAGE,
@@ -71,8 +99,11 @@ def tile_paths(region, x, y, progress=None):
     for kind in ('landcover','impervious','elevation'):
         path = folder / f'{kind}.tif'
         paths[kind] = path
-        if path.exists():
+        if _valid_raster(path, x, y):
             continue
+        # A stale zero-byte, truncated, wrong-CRS, or non-covering file must not
+        # poison the cache forever. Remove it before creating a fresh temp file.
+        path.unlink(missing_ok=True)
         if progress:
             progress(f'Downloading {get_region(region).name} {kind} tile {col}, {row}…')
         temporary = folder / f'.{kind}.{uuid.uuid4().hex}.tif'
@@ -91,11 +122,8 @@ def tile_paths(region, x, y, progress=None):
                     with temporary.open('wb') as stream:
                         for chunk in response.iter_content(1024*1024):
                             stream.write(chunk)
-            with rasterio.open(temporary) as src:
-                if src.crs != rasterio.crs.CRS.from_epsg(5070) or src.count!=1:
-                    raise ValueError(f'Unexpected {kind} tile format.')
-                if not (src.bounds.left <= x <= src.bounds.right and src.bounds.bottom <= y <= src.bounds.top):
-                    raise ValueError('Downloaded tile does not cover the requested point.')
+            if not _valid_raster(temporary, x, y):
+                raise ValueError(f'Downloaded {kind} tile is not a valid EPSG:5070 raster covering the requested point.')
             os.replace(temporary,path)
         finally:
             temporary.unlink(missing_ok=True)
