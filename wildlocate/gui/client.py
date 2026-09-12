@@ -30,11 +30,11 @@ class PredictionClient(QObject):
         self._buffer = b""
         self._pending = None
 
-    def analyze(self, species, latitude, longitude):
+    def analyze(self, species, latitude, longitude, region="MA"):
         if self.busy:
             return
         self.busy = True
-        self._pending = {"species": species, "latitude": latitude, "longitude": longitude}
+        self._pending = {"species": species, "latitude": latitude, "longitude": longitude, "region": region}
         self._buffer = b""
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.process.start()

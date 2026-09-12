@@ -12,7 +12,8 @@ class TrainingClient(QObject):
     event_received = pyqtSignal(dict)
     log = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, region="MA"):
+        self.region = region
         super().__init__(parent)
         self.process = QProcess(self)
         interpreter = Path(sys.executable)
@@ -38,7 +39,7 @@ class TrainingClient(QObject):
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.job_id = new_job_id()
             self._buffer = b""
-            self.process.setArguments(["-u", "-m", "wildlocate.core.training_worker", "--job-id", self.job_id])
+            self.process.setArguments(["-u", "-m", "wildlocate.core.training_worker", "--job-id", self.job_id, "--region", self.region])
             self.process.start()
         else:
             self.send_pending()

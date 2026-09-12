@@ -48,6 +48,10 @@ def api_get(endpoint, params=None):
 
 
 def find_place_id(place_name):
+    from wildlocate.core.regions import REGIONS
+    for region in REGIONS.values():
+        if str(place_name).casefold() in (region.name.casefold(), region.code.casefold()):
+            return region.place_id
     place_name = place_name.strip()
     if not place_name:
         raise ValueError("Place name is required.")

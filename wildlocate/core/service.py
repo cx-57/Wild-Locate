@@ -18,9 +18,15 @@ class PredictionError(Exception):
         self.status_code = status_code
 
 
-def assess_habitat(species, latitude, longitude):
+def assess_habitat(species, latitude, longitude, region="MA"):
+    from wildlocate.core.regions import get_region
+    try:
+        selected_region = get_region(region)
+    except ValueError as exc:
+        raise PredictionError(str(exc), "unsupported_region") from exc
+    region = selected_region.code
     species = species.strip() if isinstance(species, str) else ""
-    canonical = next((name for name in available_species() if name.casefold() == species.casefold()), None)
+    canonical = next((name for name in available_species(region) if name.casefold() == species.casefold()), None)
     if canonical is None:
         raise PredictionError("Choose an available species, or enable a trained model in Manage species.", "unsupported_species")
     try:
@@ -36,7 +42,7 @@ def assess_habitat(species, latitude, longitude):
 
     try:
         with _prediction_lock:
-            result = predict_species(canonical, latitude, longitude)
+            result = predict_species(canonical, latitude, longitude, region)
         if not all(math.isfinite(value) for value in result["features"].values()):
             raise ValueError("Environmental feature extraction returned missing values")
         return result
@@ -55,7 +61,7 @@ def assess_habitat(species, latitude, longitude):
         logger.exception("Prediction could not evaluate the location")
         if str(exc).startswith(("Requested coordinate cannot be evaluated", "Environmental feature extraction returned missing values")):
             raise PredictionError(
-                "This location is outside the available environmental coverage or has incomplete data. Try another location in Massachusetts.",
+                f"This location is outside the available {selected_region.name} coverage or has incomplete data. Try another location in {selected_region.name}.",
                 "location_unavailable",
             ) from exc
         raise PredictionError(

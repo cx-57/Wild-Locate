@@ -15,6 +15,7 @@ from wildlocate.core.registry import cleanup_job
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--job-id", required=True)
+    parser.add_argument("--region", default="MA")
     args = parser.parse_args()
     output = sys.stdout
 
@@ -22,7 +23,7 @@ def main():
         output.write(json.dumps({"event": event, **payload}, allow_nan=False) + "\n")
         output.flush()
 
-    session = TrainingSession(args.job_id, lambda message: emit("progress", message=message))
+    session = TrainingSession(args.job_id, lambda message: emit("progress", message=message), region=args.region)
     try:
         for line in sys.stdin:
             try:

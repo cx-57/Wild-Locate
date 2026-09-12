@@ -13,7 +13,10 @@ MIN_OBSERVATIONS = 25
 
 
 class TrainingSession:
-    def __init__(self, job_id, progress=lambda message: None):
+    def __init__(self, job_id, progress=lambda message: None, region="MA", max_observations=5000):
+        from wildlocate.core.regions import get_region
+        self.region = get_region(region)
+        self.max_observations = max_observations
         self.job_id = job_id
         self.workspace = job_path(job_id)
         self.progress = progress
@@ -21,6 +24,10 @@ class TrainingSession:
         self.prepared = None
 
     def initialize_environment(self):
+        if self.region.code != "MA":
+            from wildlocate.core.data.regional import initialize
+            initialize(self.region, self.progress)
+            return {}
         from wildlocate.cli import cmd_init
         from wildlocate.core.data.environment import get_user_data_dir
         destination = get_user_data_dir() / "raw"
@@ -50,7 +57,7 @@ class TrainingSession:
         self.progress("Finding the species on iNaturalist…")
         taxon = resolve_species(query)
         if taxon.get("rank") != "species" or taxon.get("iconic_taxon_name") != "Mammalia":
-            raise ValueError("Choose a mammal species. This training workflow supports Massachusetts mammals only.")
+            raise ValueError("Choose a mammal species. This training workflow supports mammals only.")
         if len(taxon["common_name"]) > 100:
             raise ValueError("This species name is too long to store.")
         self.taxon = taxon
@@ -64,22 +71,27 @@ class TrainingSession:
         self.prepared = None
         if self.taxon is None:
             raise ValueError("Find and confirm a mammal species first.")
-        self.progress("Checking the Massachusetts environmental datasets…")
-        DatasetPaths().validate()
+        self.progress(f"Checking the {self.region.name} environmental datasets…")
+        if self.region.code == "MA":
+            DatasetPaths().validate()
+        else:
+            from wildlocate.core.data.regional import initialize
+            initialize(self.region, self.progress)
         self.workspace.mkdir(parents=True, exist_ok=True)
-        self.progress("Downloading research-grade Massachusetts observations…")
+        self.progress(f"Downloading research-grade {self.region.name} observations…")
         raw = download_species_observations(
-            self.taxon["common_name"], taxon_id=self.taxon["taxon_id"], progress=self.progress,
+            self.taxon["common_name"], place_name=self.region.name, taxon_id=self.taxon["taxon_id"], progress=self.progress,
+            max_observations=self.max_observations,
         )
         cleaned = clean_species_observations(raw)
         if len(cleaned) < MIN_OBSERVATIONS:
             raise ValueError(
                 f"Only {len(cleaned):,} usable observations remain out of {len(raw):,}. "
                 f"At least {MIN_OBSERVATIONS} are required to attempt spatial validation. "
-                "Try another Massachusetts mammal; obscured, duplicate and imprecise locations are excluded."
+                f"Try another {self.region.name} mammal; obscured, duplicate and imprecise locations are excluded."
             )
         save_cleaned_observations(cleaned, self.taxon["common_name"], self.workspace / "samples")
-        self.prepared = {"species": self.taxon["common_name"], "raw_count": len(raw), "cleaned_count": len(cleaned)}
+        self.prepared = {"species": self.taxon["common_name"], "raw_count": len(raw), "cleaned_count": len(cleaned), "download_limit": self.max_observations}
         return self.prepared
 
     def train(self):
@@ -93,12 +105,13 @@ class TrainingSession:
         name = self.taxon["common_name"]
         samples = self.workspace / "samples"
         pool = self.workspace / "mammal_pool.csv"
-        cached_pool = get_user_data_dir() / "training-cache" / "massachusetts_mammal_pool.csv"
+        from wildlocate.core.regions import region_root
+        cached_pool = region_root(self.region) / "training-cache" / f"{self.region.name.lower()}_mammal_pool.csv"
         if cached_pool.is_file():
             shutil.copyfile(cached_pool, pool)
-        self.progress("Preparing background locations across Massachusetts…")
+        self.progress(f"Preparing background locations across {self.region.name}…")
         generate_background(name, samples_dir=samples, pool_file=pool,
-                            taxon_id=self.taxon["taxon_id"], progress=self.progress)
+                            taxon_id=self.taxon["taxon_id"], progress=self.progress, place_name=self.region.name)
         if pool.is_file():
             cached_pool.parent.mkdir(parents=True, exist_ok=True)
             temporary = cached_pool.with_suffix(f".{self.job_id}.tmp")
@@ -107,11 +120,15 @@ class TrainingSession:
         self.progress("Extracting environmental features…")
         features = self.workspace / "features.csv"
         build_species_dataset(name, samples / f"{species_slug(name)}_training_points.csv",
-                              features, progress=self.progress)
+                              features, progress=self.progress, region=self.region.code)
         self.progress("Evaluating candidate models using five spatial folds…")
         model_path, metrics_path, metrics = train_species(
             name, features, self.workspace / "fitted", progress=self.progress,
         )
+        if self.region.code != "MA":
+            metrics["region"] = self.region.code
+            metrics["feature_schema"] = "regional-raster-v1"
+            atomic_json(metrics_path, metrics)
         self.progress("Checking the completed model and saving it for review…")
         # Validate the serialized artifact and all comparison predictions before publishing.
         import joblib
@@ -130,9 +147,9 @@ class TrainingSession:
         created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         atomic_json(review / "manifest.json", {
             "version": 1, "species": name, "taxon": self.taxon,
-            "created_at": created_at, "region": "Massachusetts", **self.prepared,
+            "created_at": created_at, "region": self.region.code, **self.prepared,
         })
-        record = ModelRecord(self.job_id, name, review / "model.joblib", review / "metrics.json", review / "features.csv", True)
+        record = ModelRecord(self.job_id, name, review / "model.joblib", review / "metrics.json", review / "features.csv", True, region=self.region.code)
         if not complete(record):
             raise ValueError("The model files are incomplete. Training was not published.")
         custom_root().mkdir(parents=True, exist_ok=True)

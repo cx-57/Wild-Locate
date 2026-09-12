@@ -21,12 +21,14 @@ def action(text, callback, primary=False):
 class SpeciesManager(QDialog):
     models_changed = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, region="MA"):
+        from wildlocate.core.regions import get_region
+        self.region = get_region(region)
         super().__init__(parent)
         self.setWindowTitle("Manage species · Wild-Locate")
         self.resize(820, 700)
         self.setMinimumSize(660, 560)
-        self.client = TrainingClient(self)
+        self.client = TrainingClient(self, region=self.region.code)
         self.client.event_received.connect(self.handle_event)
         self.client.log.connect(self.append_log)
         self.taxon = None
@@ -38,7 +40,9 @@ class SpeciesManager(QDialog):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
         layout.addWidget(label("Manage species", "heading"))
-        layout.addWidget(label("Train and review your own habitat models for Massachusetts mammals.", "muted", True))
+        layout.addWidget(label(f"Train and review habitat models for {self.region.name} mammals.", "muted", True))
+        if self.region.code != "MA":
+            layout.addWidget(label("Experimental regional models use national land-cover and terrain data. Missing tiles download during training; this may take a while. Suggested species: " + ", ".join(self.region.examples), "muted", True))
         self.tabs = QTabWidget()
         self.tabs.addTab(self.build_models(), "Your models")
         self.tabs.addTab(self.build_training(), "Train a new species")
@@ -93,7 +97,7 @@ class SpeciesManager(QDialog):
         content.setObjectName("page")
         layout = QVBoxLayout(content)
         layout.setSpacing(12)
-        layout.addWidget(label("1. Find a Massachusetts mammal", "subheading"))
+        layout.addWidget(label(f"1. Find a {self.region.name} mammal", "subheading"))
         layout.addWidget(label("Enter a common or scientific name. Observations come from iNaturalist; internet access is needed for downloads.", "muted", True))
         row = QHBoxLayout()
         self.query = QLineEdit()
@@ -154,8 +158,8 @@ class SpeciesManager(QDialog):
     def refresh_models(self, selected_id=None):
         previous = self.selected_record()
         selected_id = selected_id or (previous.id if previous else None)
-        self.records = {r.id: r for r in list_models()}
-        active = {r.id for r in available_models().values()}
+        self.records = {r.id: r for r in list_models(self.region.code)}
+        active = {r.id for r in available_models(self.region.code).values()}
         self.models.clear()
         for record in self.records.values():
             source = "Custom" if record.custom else "Bundled"
@@ -205,7 +209,7 @@ class SpeciesManager(QDialog):
             return
         busy = self.client.busy
         record = self.selected_record()
-        active = {r.id for r in available_models().values()}
+        active = {r.id for r in available_models(self.region.code).values()}
         self.enable_button.setEnabled(not busy and record is not None and record.id not in active)
         self.retrain_button.setEnabled(not busy and record is not None)
         self.delete_button.setEnabled(not busy and record is not None and record.custom)
@@ -267,7 +271,7 @@ class SpeciesManager(QDialog):
         if kind == "resolved":
             self.taxon = event
             self.state = "resolved"
-            self.match.setText(f"{event['common_name']} ({event['scientific_name']})\nMammal species · Massachusetts observations only")
+            self.match.setText(f"{event['common_name']} ({event['scientific_name']})\nMammal species · {self.region.name} observations only")
             self.match.show()
             self.status.setText("Confirm this species to download and check its observations.")
         elif kind == "prepared":

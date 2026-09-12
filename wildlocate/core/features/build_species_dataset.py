@@ -42,6 +42,7 @@ def build_species_dataset(
     training_points_file=None,
     output_file=None,
     progress=None,
+    region="MA",
 ):
     slug = species_slug(species_name)
     training_path = Path(training_points_file) if training_points_file else DEFAULT_INPUT_DIR / f"{slug}_training_points.csv"
@@ -53,6 +54,9 @@ def build_species_dataset(
 
     training_df = pd.read_csv(training_path)
     validate_training_points(training_df)
+    if region != "MA":
+        from wildlocate.core.data.regional import prefetch_training_tiles
+        prefetch_training_tiles(training_df, region, progress)
 
     output_path = Path(output_file) if output_file else DEFAULT_OUTPUT_DIR / f"{slug}_features.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,7 +78,11 @@ def build_species_dataset(
         presence = int(row["presence"])
 
         try:
-            features = extract_features(latitude, longitude)
+            if region == "MA":
+                features = extract_features(latitude, longitude)
+            else:
+                from wildlocate.core.data.regional import extract_regional_features
+                features = extract_regional_features(latitude, longitude, region, progress)
         except Exception as exc:
             failed_rows.append(
                 {

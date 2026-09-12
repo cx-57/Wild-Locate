@@ -12,7 +12,7 @@ def main():
         try:
             request = json.loads(line)
             with redirect_stdout(sys.stderr):
-                result = assess_habitat(request["species"], request["latitude"], request["longitude"])
+                result = assess_habitat(request["species"], request["latitude"], request["longitude"], request.get("region", "MA"))
             response = {"result": result}
         except PredictionError as exc:
             response = {"error": str(exc), "code": exc.code}
