@@ -1,7 +1,9 @@
 name: arizona-pilot
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - clean-habitat-rebuild
 
 jobs:
   pilot:
