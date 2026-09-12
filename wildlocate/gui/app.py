@@ -7,19 +7,20 @@ import time
 from PyQt6.QtCore import QIODevice, QSaveFile, QSignalBlocker, Qt, QTimer
 from PyQt6.QtGui import QFont, QFontDatabase, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QApplication, QBoxLayout, QComboBox, QFileDialog, QFrame, QGridLayout,
+    QApplication, QBoxLayout, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QLineEdit, QMainWindow, QProgressBar, QPushButton,
-    QScrollArea, QSizePolicy, QStackedWidget, QStyledItemDelegate, QVBoxLayout, QWidget,
+    QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
 
+from wildlocate.core.accounts import normalize_username
 from wildlocate.core.registry import available_species
 from wildlocate.core.regions import REGIONS, get_region
 from wildlocate.gui.client import PredictionClient
 from wildlocate.gui.formatting import coordinates, feature_display, ordinal
 from wildlocate.gui.location_map import LocationMap
 from wildlocate.gui.insights import InsightsPanel
-from wildlocate.gui.theme import STYLESHEET
-from wildlocate.gui.widgets import BrandMark, Disclosure, SuitabilityGauge, app_icon, divider, label
+from wildlocate.gui.theme import STYLESHEET, light_palette
+from wildlocate.gui.widgets import BrandMark, ChoiceBox, Disclosure, SuitabilityGauge, app_icon, divider, label
 
 
 def button(text, role="", callback=None):
@@ -35,14 +36,14 @@ class MainWindow(QMainWindow):
     def __init__(self, username=None):
         super().__init__()
         self.region = "MA"
-        self.username = username
+        self.username = normalize_username(username) if username is not None else None
         self.signed_out = False
         self.setWindowTitle("Wild-Locate · Habitat Explorer")
         self.setWindowIcon(app_icon())
         self.resize(1240, 930)
         self.setMinimumSize(760, 640)
         self.result = None
-        self.client = PredictionClient(self)
+        self.client = PredictionClient(self, username=self.username)
         self.client.succeeded.connect(self.show_result)
         self.client.failed.connect(self.show_error)
         self.client.cancelled.connect(self.cancelled)
@@ -81,7 +82,7 @@ class MainWindow(QMainWindow):
         self.cards.addWidget(self.result_card, 1)
         self.page_layout.addLayout(self.cards)
 
-        self.insights = Disclosure("Habitat insights · experimental")
+        self.insights = Disclosure("Habitat Insights")
         self.page_layout.addWidget(self.insights)
         self.insights.hide()
 
@@ -140,8 +141,9 @@ class MainWindow(QMainWindow):
             row.addWidget(label(self.username, "small"))
             row.addWidget(button("Sign out", "link", self.sign_out))
         self.manage_species_button = button("Manage species", "secondary", self.manage_species)
+        self.manage_species_button.setEnabled(self.username is not None)
         row.addWidget(self.manage_species_button)
-        self.region_choice = QComboBox()
+        self.region_choice = ChoiceBox()
         self.region_choice.setAccessibleName("State")
         for code, region in REGIONS.items():
             self.region_choice.addItem(region.name, code)
@@ -174,18 +176,12 @@ class MainWindow(QMainWindow):
         layout.addSpacing(3)
         species_label = label("CHOOSE A SPECIES", "step")
         layout.addWidget(species_label)
-        self.species = QComboBox()
-        self.species.addItems(available_species(self.region))
+        self.species = ChoiceBox()
+        self.species.addItems(available_species(self.region, username=self.username))
         self.species.setCurrentText("North American River Otter")
         species_label.setBuddy(self.species)
         self.species.setAccessibleName("Species")
         self.species.setToolTip("Choose a species with an enabled model. Add models in Manage species.")
-        popup = self.species.view()
-        popup.setObjectName("speciesOptions")
-        popup.setItemDelegate(QStyledItemDelegate(popup))
-        popup.setTextElideMode(Qt.TextElideMode.ElideNone)
-        popup.ensurePolished()
-        popup.setMinimumWidth(popup.sizeHintForColumn(0) + 2 * popup.frameWidth())
         layout.addWidget(self.species)
         layout.addWidget(label("Choose an available species, or train another in Manage species.", "small", True))
         layout.addSpacing(3)
@@ -367,7 +363,7 @@ class MainWindow(QMainWindow):
         self.location_map.region_center = region.center
         self.use_example()
         self.empty_text.setText("Choose a species and location, then select Analyze Habitat.")
-        if not available_species(self.region):
+        if not available_species(self.region, username=self.username):
             self.empty_text.setText(f"No enabled models for {region.name} yet. Open Manage species to train and review a model.")
             self.input_note.setText("Suggested mammals: " + ", ".join(region.examples))
         elif self.region != "MA":
@@ -383,10 +379,10 @@ class MainWindow(QMainWindow):
         self.input_note.setText("Example coordinates loaded. Ready to analyze.")
 
     def manage_species(self):
-        if self.client.busy:
+        if self.client.busy or self.username is None:
             return
         from wildlocate.gui.species_manager import SpeciesManager
-        dialog = SpeciesManager(self, region=self.region)
+        dialog = SpeciesManager(self, region=self.region, username=self.username)
         dialog.models_changed.connect(self.refresh_species)
         dialog.exec()
         self.refresh_species()
@@ -396,7 +392,7 @@ class MainWindow(QMainWindow):
         selected = self.species.currentText()
         with QSignalBlocker(self.species):
             self.species.clear()
-            self.species.addItems(available_species(self.region))
+            self.species.addItems(available_species(self.region, username=self.username))
             self.species.setPlaceholderText("No enabled models — open Manage species")
             if self.species.findText(selected) >= 0:
                 self.species.setCurrentText(selected)
@@ -405,8 +401,6 @@ class MainWindow(QMainWindow):
         self.analyze_button.setEnabled(bool(self.species.count()))
         if self.species.count() and self.result is None:
             self.empty_text.setText("Choose a species and location, then select Analyze Habitat.")
-        popup = self.species.view()
-        popup.setMinimumWidth(popup.sizeHintForColumn(0) + 2 * popup.frameWidth())
 
     def map_selected(self, latitude, longitude):
         if self.client.busy:
@@ -473,7 +467,7 @@ class MainWindow(QMainWindow):
         if self.client.busy:
             return
         species = self.species.currentText()
-        if species not in available_species(self.region):
+        if species not in available_species(self.region, username=self.username):
             self.species.setProperty("invalid", True)
             self.species.style().unpolish(self.species)
             self.species.style().polish(self.species)
@@ -501,6 +495,7 @@ class MainWindow(QMainWindow):
     def set_busy(self, busy):
         for widget in (self.species, self.latitude, self.longitude, self.location_map, self.example_button, self.analyze_button, self.manage_species_button, self.region_choice):
             widget.setEnabled(not busy)
+        self.manage_species_button.setEnabled(not busy and self.username is not None)
         self.analyze_button.setEnabled(not busy and bool(self.species.count()))
         self.cancel_button.setVisible(busy)
         self.progress.setVisible(busy)
@@ -606,6 +601,7 @@ def create_application(argv=None):
     app.setApplicationName("Wild-Locate")
     app.setOrganizationName("Wild-Locate")
     app.setStyle("Fusion")
+    app.setPalette(light_palette())
     app.setFont(QFont("Segoe UI", 10))
     app.setStyleSheet(STYLESHEET)
     return app

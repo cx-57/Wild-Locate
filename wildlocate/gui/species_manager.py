@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
     QTabWidget, QVBoxLayout, QWidget,
 )
 
+from wildlocate.core.accounts import normalize_username
 from wildlocate.core.registry import available_models, delete_model, enable_model, list_models
 from wildlocate.gui.training_client import TrainingClient
 from wildlocate.gui.widgets import Disclosure, label
@@ -21,14 +22,15 @@ def action(text, callback, primary=False):
 class SpeciesManager(QDialog):
     models_changed = pyqtSignal()
 
-    def __init__(self, parent=None, region="MA"):
+    def __init__(self, parent=None, region="MA", *, username=None):
         from wildlocate.core.regions import get_region
         self.region = get_region(region)
+        self.username = normalize_username(username)
         super().__init__(parent)
         self.setWindowTitle("Manage species · Wild-Locate")
         self.resize(820, 700)
         self.setMinimumSize(660, 560)
-        self.client = TrainingClient(self, region=self.region.code)
+        self.client = TrainingClient(self, region=self.region.code, username=self.username)
         self.client.event_received.connect(self.handle_event)
         self.client.log.connect(self.append_log)
         self.taxon = None
@@ -60,7 +62,7 @@ class SpeciesManager(QDialog):
         page.setObjectName("page")
         layout = QVBoxLayout(page)
         layout.setSpacing(12)
-        layout.addWidget(label("Bundled models are ready to use. New models stay here for review until you enable them.", "muted", True))
+        layout.addWidget(label("Bundled models are ready to use. Models you train are saved to your account and stay here for review until you enable them.", "muted", True))
         self.models = QListWidget()
         self.models.setAccessibleName("Saved species models")
         self.models.setMinimumHeight(150)
@@ -158,8 +160,8 @@ class SpeciesManager(QDialog):
     def refresh_models(self, selected_id=None):
         previous = self.selected_record()
         selected_id = selected_id or (previous.id if previous else None)
-        self.records = {r.id: r for r in list_models(self.region.code)}
-        active = {r.id for r in available_models(self.region.code).values()}
+        self.records = {r.id: r for r in list_models(self.region.code, username=self.username)}
+        active = {r.id for r in available_models(self.region.code, username=self.username).values()}
         self.models.clear()
         for record in self.records.values():
             source = "Custom" if record.custom else "Bundled"
@@ -209,7 +211,7 @@ class SpeciesManager(QDialog):
             return
         busy = self.client.busy
         record = self.selected_record()
-        active = {r.id for r in available_models(self.region.code).values()}
+        active = {r.id for r in available_models(self.region.code, username=self.username).values()}
         self.enable_button.setEnabled(not busy and record is not None and record.id not in active)
         self.retrain_button.setEnabled(not busy and record is not None)
         self.delete_button.setEnabled(not busy and record is not None and record.custom)
@@ -310,7 +312,7 @@ class SpeciesManager(QDialog):
         if record is None:
             return
         try:
-            enable_model(record.id)
+            enable_model(record.id, username=self.username)
             self.models_changed.emit()
             self.refresh_models(record.id)
             self.model_message.setText(f"{record.species} is now available in the analysis dropdown.")
@@ -336,7 +338,7 @@ class SpeciesManager(QDialog):
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            delete_model(record.id)
+            delete_model(record.id, username=self.username)
             self.models_changed.emit()
             self.refresh_models()
             self.model_message.hide()

@@ -1,4 +1,4 @@
-"""Local prototype accounts. Habitat data and models remain shared."""
+"""Local accounts with separate storage for each account's trained models."""
 import hashlib
 import hmac
 import os
@@ -21,10 +21,24 @@ def password_hash(password, salt):
     return hashlib.scrypt(password.encode(), salt=salt, n=16384, r=8, p=1)
 
 
-def authenticate(username, password, create=False):
+def normalize_username(username):
+    if not isinstance(username, str):
+        raise ValueError('Sign in to access your trained models.')
     username = username.strip().casefold()
     if not 3 <= len(username) <= 40 or not all(c.isalnum() or c in '_.-' for c in username):
         raise ValueError('Use 3–40 letters, numbers, dots, dashes or underscores for your username.')
+    return username
+
+
+def account_data_dir(username):
+    """Resolve an authenticated local account to a stable, filesystem-safe folder."""
+    username = normalize_username(username)
+    identifier = hashlib.sha256(username.encode('utf-8')).hexdigest()
+    return get_user_data_dir() / 'accounts' / identifier
+
+
+def authenticate(username, password, create=False):
+    username = normalize_username(username)
     if len(password) > 256:
         raise ValueError('Use a password of at most 256 characters.')
     if create and len(password) < 8:

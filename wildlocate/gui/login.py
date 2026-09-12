@@ -63,7 +63,7 @@ class LoginDialog(QDialog):
         self.switch.clicked.connect(self.toggle_mode)
         body.addWidget(self.switch)
         outer.addWidget(card)
-        outer.addWidget(label('Accounts stay on this computer. Models and habitat data are shared between accounts.', 'small', True))
+        outer.addWidget(label('Accounts stay on this computer. Models you train belong to your account. Bundled models and habitat data are available to everyone.', 'small', True))
         outer.addStretch()
 
     def toggle_mode(self):

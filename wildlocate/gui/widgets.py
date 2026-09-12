@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap, QIcon
-from PyQt6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QComboBox, QFrame, QLabel, QPushButton, QStyledItemDelegate, QVBoxLayout, QWidget
 
 
 def label(text, role="", wrap=False):
@@ -15,6 +15,38 @@ def divider():
     widget = QFrame()
     widget.setObjectName("divider")
     return widget
+
+
+class ChoiceBox(QComboBox):
+    """Use the same themed popup for state and species choices."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        popup = self.view()
+        popup.setObjectName("comboOptions")
+        popup.setItemDelegate(QStyledItemDelegate(popup))
+        popup.setTextElideMode(Qt.TextElideMode.ElideNone)
+        container = popup.window()
+        container.setObjectName("comboPopup")
+        if isinstance(container, QFrame):
+            container.setFrameShape(QFrame.Shape.NoFrame)
+
+    def showPopup(self):
+        popup = self.view()
+        popup.ensurePolished()
+        popup.setMinimumWidth(popup.sizeHintForColumn(0) + 2 * popup.frameWidth())
+        super().showPopup()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        # Draw a chevron explicitly: styling Qt's drop-down removes its native arrow.
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor("#607165" if self.isEnabled() else "#8a958d"), 1.5,
+                            Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        x = 16 if self.layoutDirection() == Qt.LayoutDirection.RightToLeft else self.width() - 16
+        y = self.height() / 2
+        painter.drawPolyline(QPointF(x - 4, y - 2), QPointF(x, y + 2), QPointF(x + 4, y - 2))
 
 
 def draw_mark(painter, size):

@@ -5,6 +5,7 @@ import os
 import shutil
 import uuid
 
+from wildlocate.core.accounts import normalize_username
 from wildlocate.core.registry import (
     ModelRecord, atomic_json, cleanup_job, complete, custom_root, job_path,
 )
@@ -13,12 +14,13 @@ MIN_OBSERVATIONS = 25
 
 
 class TrainingSession:
-    def __init__(self, job_id, progress=lambda message: None, region="MA", max_observations=5000):
+    def __init__(self, job_id, progress=lambda message: None, region="MA", max_observations=5000, *, username=None):
         from wildlocate.core.regions import get_region
         self.region = get_region(region)
         self.max_observations = max_observations
         self.job_id = job_id
-        self.workspace = job_path(job_id)
+        self.username = normalize_username(username)
+        self.workspace = job_path(job_id, username=self.username)
         self.progress = progress
         self.taxon = None
         self.prepared = None
@@ -96,7 +98,6 @@ class TrainingSession:
 
     def train(self):
         from wildlocate.core.data.background import generate_background
-        from wildlocate.core.data.environment import get_user_data_dir
         from wildlocate.core.data.inaturalist import species_slug
         from wildlocate.core.features.build_species_dataset import build_species_dataset
         from wildlocate.core.models.train_species import train_species
@@ -148,18 +149,19 @@ class TrainingSession:
         atomic_json(review / "manifest.json", {
             "version": 1, "species": name, "taxon": self.taxon,
             "created_at": created_at, "region": self.region.code, **self.prepared,
+            "owner": self.username,
         })
         record = ModelRecord(self.job_id, name, review / "model.joblib", review / "metrics.json", review / "features.csv", True, region=self.region.code)
         if not complete(record):
             raise ValueError("The model files are incomplete. Training was not published.")
-        custom_root().mkdir(parents=True, exist_ok=True)
+        custom_root(self.username).mkdir(parents=True, exist_ok=True)
         # The destination is invisible to discovery until every artifact is ready.
-        destination = custom_root() / self.job_id
+        destination = custom_root(self.username) / self.job_id
         if destination.exists():
             raise ValueError("This training session has already saved a model.")
         os.replace(review, destination)
         self.prepared = None
-        cleanup_job(self.job_id)
+        cleanup_job(self.job_id, username=self.username)
         return {"model_id": self.job_id, "species": name}
 
 

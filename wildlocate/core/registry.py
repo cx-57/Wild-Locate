@@ -1,4 +1,4 @@
-"""Discover complete models; activation is an atomic, per-user choice."""
+"""Discover bundled and account-owned models; activation is account-specific."""
 
 import csv
 from dataclasses import dataclass
@@ -10,9 +10,9 @@ import shutil
 import uuid
 
 import wildlocate
+from wildlocate.core.accounts import account_data_dir, normalize_username
 from wildlocate.core.catalog import SUPPORTED_SPECIES
 from wildlocate.core.regions import get_region
-from wildlocate.core.data.environment import get_user_data_dir
 
 BUNDLED_DATA = Path(wildlocate.__file__).resolve().parent / "data" / "processed"
 
@@ -32,12 +32,12 @@ class ModelRecord:
         return json.loads(self.metrics_path.read_text(encoding="utf-8"))
 
 
-def custom_root():
-    return get_user_data_dir() / "models"
+def custom_root(username):
+    return account_data_dir(username) / "models"
 
 
-def job_path(job_id):
-    return _child(get_user_data_dir() / "training", job_id)
+def job_path(job_id, *, username=None):
+    return _child(account_data_dir(username) / "training", job_id)
 
 
 def _child(root, identifier):
@@ -86,19 +86,22 @@ def complete(record):
         return False
 
 
-def custom_record(identifier):
-    folder = _child(custom_root(), identifier)
+def custom_record(identifier, *, username=None):
+    username = normalize_username(username)
+    folder = _child(custom_root(username), identifier)
     manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
         raise ValueError("Invalid model manifest.")
     name = manifest.get("species")
     if manifest.get("version") != 1 or not isinstance(name, str) or not name.strip() or len(name) > 100:
         raise ValueError("Invalid model manifest.")
+    if manifest.get("owner") != username:
+        raise ValueError("This model is not available to this account.")
     return ModelRecord(identifier, name, folder / "model.joblib", folder / "metrics.json",
                        folder / "features.csv", True, str(manifest.get("created_at", "")), get_region(manifest.get("region", "MA")).code)
 
 
-def list_models(region="MA"):
+def list_models(region="MA", *, username=None):
     region = get_region(region).code
     records = []
     for name in SUPPORTED_SPECIES:
@@ -108,10 +111,10 @@ def list_models(region="MA"):
                              BUNDLED_DATA / "features" / "species" / f"{slug}_features.csv")
         if complete(record):
             records.append(record)
-    if custom_root().exists():
-        for folder in sorted(custom_root().iterdir()):
+    if username is not None and custom_root(username).exists():
+        for folder in sorted(custom_root(username).iterdir()):
             try:
-                record = custom_record(folder.name)
+                record = custom_record(folder.name, username=username)
                 if complete(record):
                     records.append(record)
             except (OSError, ValueError, TypeError):
@@ -119,30 +122,32 @@ def list_models(region="MA"):
     return [record for record in records if record.region == region]
 
 
-def _activation():
+def _activation(username):
+    if username is None:
+        return {}
     try:
-        data = json.loads((get_user_data_dir() / "active_models.json").read_text(encoding="utf-8"))
+        data = json.loads((account_data_dir(username) / "active_models.json").read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
 
 
-def available_models(region="MA"):
-    records = list_models(region)
+def available_models(region="MA", *, username=None):
+    records = list_models(region, username=username)
     available = {r.species.casefold(): r for r in records if not r.custom}
-    active = _activation()
+    active = _activation(username)
     for record in records:
         if record.custom and active.get(_activation_key(record)) == record.id:
             available[record.species.casefold()] = record
     return available
 
 
-def available_species(region="MA"):
-    return tuple(record.species for record in available_models(region).values())
+def available_species(region="MA", *, username=None):
+    return tuple(record.species for record in available_models(region, username=username).values())
 
 
-def resolve_model(species, region="MA"):
-    record = available_models(region).get(species.strip().casefold())
+def resolve_model(species, region="MA", *, username=None):
+    record = available_models(region, username=username).get(species.strip().casefold())
     if record is None:
         raise FileNotFoundError(f"No trained model found for {species}. Enable a complete model in Manage species.")
     return record
@@ -153,30 +158,31 @@ def _activation_key(record):
     return name if record.region == "MA" else f"{record.region}:{name}"
 
 
-def enable_model(identifier):
+def enable_model(identifier, *, username=None):
+    username = normalize_username(username)
     from wildlocate.core.regions import REGIONS
-    records = {r.id: r for region in REGIONS for r in list_models(region)}
+    records = {r.id: r for region in REGIONS for r in list_models(region, username=username)}
     if identifier not in records:
         raise ValueError("This model is incomplete or no longer available.")
     record = records[identifier]
-    active = _activation()
+    active = _activation(username)
     if record.custom:
         active[_activation_key(record)] = record.id
     else:
         active.pop(_activation_key(record), None)
-    atomic_json(get_user_data_dir() / "active_models.json", active)
+    atomic_json(account_data_dir(username) / "active_models.json", active)
 
 
-def delete_model(identifier):
-    record = custom_record(identifier)
-    active = _activation()
+def delete_model(identifier, *, username=None):
+    record = custom_record(identifier, username=username)
+    active = _activation(username)
     if active.get(_activation_key(record)) == identifier:
         active.pop(_activation_key(record))
-        atomic_json(get_user_data_dir() / "active_models.json", active)
-    shutil.rmtree(_child(custom_root(), identifier))
+        atomic_json(account_data_dir(username) / "active_models.json", active)
+    shutil.rmtree(_child(custom_root(username), identifier))
 
 
-def cleanup_job(identifier):
-    path = job_path(identifier)
+def cleanup_job(identifier, *, username=None):
+    path = job_path(identifier, username=username)
     if path.exists():
         shutil.rmtree(path)

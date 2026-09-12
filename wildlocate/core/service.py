@@ -18,7 +18,7 @@ class PredictionError(Exception):
         self.status_code = status_code
 
 
-def assess_habitat(species, latitude, longitude, region="MA"):
+def assess_habitat(species, latitude, longitude, region="MA", *, username=None):
     from wildlocate.core.regions import get_region
     try:
         selected_region = get_region(region)
@@ -26,7 +26,7 @@ def assess_habitat(species, latitude, longitude, region="MA"):
         raise PredictionError(str(exc), "unsupported_region") from exc
     region = selected_region.code
     species = species.strip() if isinstance(species, str) else ""
-    canonical = next((name for name in available_species(region) if name.casefold() == species.casefold()), None)
+    canonical = next((name for name in available_species(region, username=username) if name.casefold() == species.casefold()), None)
     if canonical is None:
         raise PredictionError("Choose an available species, or enable a trained model in Manage species.", "unsupported_species")
     try:
@@ -42,7 +42,7 @@ def assess_habitat(species, latitude, longitude, region="MA"):
 
     try:
         with _prediction_lock:
-            result = predict_species(canonical, latitude, longitude, region)
+            result = predict_species(canonical, latitude, longitude, region, username=username)
         if not all(math.isfinite(value) for value in result["features"].values()):
             raise ValueError("Environmental feature extraction returned missing values")
         return result

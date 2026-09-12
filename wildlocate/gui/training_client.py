@@ -4,6 +4,7 @@ import sys
 
 from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
+from wildlocate.core.accounts import normalize_username
 from wildlocate.core.registry import cleanup_job
 from wildlocate.core.training import new_job_id
 
@@ -12,8 +13,9 @@ class TrainingClient(QObject):
     event_received = pyqtSignal(dict)
     log = pyqtSignal(str)
 
-    def __init__(self, parent=None, region="MA"):
+    def __init__(self, parent=None, region="MA", *, username=None):
         self.region = region
+        self.username = normalize_username(username)
         super().__init__(parent)
         self.process = QProcess(self)
         interpreter = Path(sys.executable)
@@ -39,7 +41,7 @@ class TrainingClient(QObject):
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.job_id = new_job_id()
             self._buffer = b""
-            self.process.setArguments(["-u", "-m", "wildlocate.core.training_worker", "--job-id", self.job_id, "--region", self.region])
+            self.process.setArguments(["-u", "-m", "wildlocate.core.training_worker", "--job-id", self.job_id, "--region", self.region, "--account", self.username])
             self.process.start()
         else:
             self.send_pending()
@@ -80,7 +82,7 @@ class TrainingClient(QObject):
         self._pending = None
         if self.job_id:
             try:
-                cleanup_job(self.job_id)
+                cleanup_job(self.job_id, username=self.username)
             except OSError as exc:
                 self.log.emit(f"Temporary training data could not be removed: {exc}")
         if was_busy and not self._stopping:

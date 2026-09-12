@@ -10,7 +10,7 @@ class PredictionClient(QObject):
     failed = pyqtSignal(str)
     cancelled = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, username=None):
         super().__init__(parent)
         self.process = QProcess(self)
         interpreter = Path(sys.executable)
@@ -20,7 +20,10 @@ class PredictionClient(QObject):
         if interpreter.name.lower() == "pythonw.exe":
             interpreter = interpreter.with_name("python.exe")
         self.process.setProgram(str(interpreter))
-        self.process.setArguments(["-u", "-m", "wildlocate.core.prediction_worker"])
+        arguments = ["-u", "-m", "wildlocate.core.prediction_worker"]
+        if username is not None:
+            arguments.extend(["--account", username])
+        self.process.setArguments(arguments)
         self.process.started.connect(self.send_pending)
         self.process.readyReadStandardOutput.connect(self.read_output)
         self.process.readyReadStandardError.connect(self.read_error)

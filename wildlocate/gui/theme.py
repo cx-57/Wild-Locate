@@ -1,3 +1,22 @@
+from PyQt6.QtGui import QColor, QPalette
+
+
+def light_palette():
+    """Keep native Qt control parts consistent with the light stylesheet."""
+    palette = QPalette(QColor("#f5f6f2"))
+    for role, color in {
+        "Window": "#f5f6f2", "WindowText": "#233c34", "Base": "#ffffff",
+        "AlternateBase": "#fbfcf9", "Text": "#233c34", "Button": "#fbfcf9",
+        "ButtonText": "#233c34", "Highlight": "#e8efdf", "HighlightedText": "#193e30",
+        "PlaceholderText": "#718075", "Light": "#ffffff", "Midlight": "#e6ebe3",
+        "Mid": "#d4ded2", "Dark": "#9bad98", "Shadow": "#9bad98",
+    }.items():
+        palette.setColor(getattr(QPalette.ColorRole, role), QColor(color))
+    for role in (QPalette.ColorRole.Text, QPalette.ColorRole.ButtonText, QPalette.ColorRole.WindowText):
+        palette.setColor(QPalette.ColorGroup.Disabled, role, QColor("#8a958d"))
+    return palette
+
+
 STYLESHEET = """
 QWidget { font-family: 'Segoe UI'; font-size: 13px; color: #233c34; }
 QMainWindow, QScrollArea, QWidget#canvas, QWidget#page { background: #f5f6f2; }
@@ -30,8 +49,11 @@ QLineEdit:disabled, QComboBox:disabled { color: #8a958d; background: #f4f6f1; bo
 QLineEdit[invalid="true"], QComboBox[invalid="true"] { border: 1px solid #b75742; background: #fff8f4; }
 QComboBox { padding-right: 32px; }
 QComboBox:focus { padding-right: 31px; }
-QAbstractItemView#speciesOptions { background: white; border: 1px solid #d4ded2; padding: 0; selection-background-color: #e8efdf; selection-color: #193e30; outline: none; }
-QAbstractItemView#speciesOptions::item { min-height: 22px; padding: 8px 12px; }
+QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
+QComboBox::down-arrow { image: none; }
+QFrame#comboPopup { background: #ffffff; border: none; }
+QAbstractItemView#comboOptions { background: #ffffff; color: #233c34; border: 1px solid #d4ded2; padding: 0; selection-background-color: #e8efdf; selection-color: #193e30; outline: none; }
+QAbstractItemView#comboOptions::item { min-height: 22px; padding: 8px 12px; }
 QPushButton { background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 9px 12px; font-weight: 500; }
 QPushButton:hover { background: #eaf0e5; }
 QPushButton:focus { border: 1px solid #477c54; }

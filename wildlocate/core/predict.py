@@ -142,7 +142,7 @@ def print_results(
         print(f"{name}: {feature_values[name]}")
 
 
-def predict_species(species, latitude, longitude, region="MA"):
+def predict_species(species, latitude, longitude, region="MA", *, username=None):
     from wildlocate.core.regions import get_region
     region = get_region(region).code
     species = species.strip()
@@ -151,7 +151,7 @@ def predict_species(species, latitude, longitude, region="MA"):
 
     validate_lat_lon(latitude, longitude)
 
-    record = resolve_model(species, region)
+    record = resolve_model(species, region, username=username)
     species = record.species
     model, metrics = load_model_and_metadata(species, record)
 

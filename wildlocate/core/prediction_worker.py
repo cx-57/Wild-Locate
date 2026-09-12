@@ -1,9 +1,13 @@
+import argparse
 from contextlib import redirect_stdout
 import json
 import sys
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--account")
+    args = parser.parse_args()
     # Reserve stdout for the transport, including during heavy backend imports.
     with redirect_stdout(sys.stderr):
         from wildlocate.core.service import PredictionError, assess_habitat
@@ -12,7 +16,7 @@ def main():
         try:
             request = json.loads(line)
             with redirect_stdout(sys.stderr):
-                result = assess_habitat(request["species"], request["latitude"], request["longitude"], request.get("region", "MA"))
+                result = assess_habitat(request["species"], request["latitude"], request["longitude"], request.get("region", "MA"), username=args.account)
             response = {"result": result}
         except PredictionError as exc:
             response = {"error": str(exc), "code": exc.code}

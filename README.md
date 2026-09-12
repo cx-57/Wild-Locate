@@ -60,11 +60,18 @@ or a guarantee of ecological reliability. Retraining creates a separate model;
 the current model stays enabled until a replacement is explicitly enabled.
 Custom models can be deleted, and bundled models can be re-enabled at any time.
 
-Custom models, training files and the background-observation cache are stored in
-the per-user `wildlocate` application-data directory, not inside the installed
-package. `WILDLOCATE_DATA_DIR` optionally overrides this directory. Completed
-models must include their model, metadata and comparison dataset before they can
-be enabled. The API and desktop dropdown use the same model registry.
+Custom models, training files and enabled-model selections are stored separately
+for each signed-in WildLocate account under `accounts/<account-id>` in the
+`wildlocate` application-data directory. Bundled example models remain available
+to every account. Environmental datasets and the background-observation cache
+are shared. `WILDLOCATE_DATA_DIR` optionally overrides the application-data
+directory. Completed models must include their model, metadata and comparison
+dataset before they can be enabled.
+
+The API and command-line predictions have no account sign-in and expose only
+bundled models. Previously shared custom models have no recorded owner: their
+files are preserved, but they are no longer listed or enabled for any account.
+Sign in and retrain a species to save a model to your account.
 
 Massachusetts uses the original habitat features. Experimental Florida and Arizona
 mammal support is described below; other regions and animal groups remain unsupported.

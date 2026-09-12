@@ -16,6 +16,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--region", default="MA")
+    parser.add_argument("--account", required=True)
     args = parser.parse_args()
     output = sys.stdout
 
@@ -23,7 +24,7 @@ def main():
         output.write(json.dumps({"event": event, **payload}, allow_nan=False) + "\n")
         output.flush()
 
-    session = TrainingSession(args.job_id, lambda message: emit("progress", message=message), region=args.region)
+    session = TrainingSession(args.job_id, lambda message: emit("progress", message=message), region=args.region, username=args.account)
     try:
         for line in sys.stdin:
             try:
@@ -54,7 +55,7 @@ def main():
                     message = str(exc)
                 emit("error", message=message, code="missing_environment" if missing else "training_failed")
     finally:
-        cleanup_job(args.job_id)
+        cleanup_job(args.job_id, username=session.username)
 
 
 if __name__ == "__main__":
