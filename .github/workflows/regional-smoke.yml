@@ -1,7 +1,9 @@
 name: regional-smoke
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - clean-habitat-rebuild
 
 jobs:
   live-regional-smoke:
