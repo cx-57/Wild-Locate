@@ -1,6 +1,20 @@
 # WildLocate
 
-# Installation From Source
+## Installation
+
+Install WildLocate
+
+```pip install wildlocate```
+
+Download Base Sets
+
+```wildlocate init```
+
+Start UI
+
+```wildlocate```
+
+## Installation From Source
 
 Clone
 
@@ -11,23 +25,26 @@ Create Virtual Environment
 ```python -m venv .venv```
 
 Install WildLocate (Installs Deps)
+
 ```pip install -e .```
 
 Setup & Run
 
 Download Datasets
+
 ```wildlocate init```
 
 Launch
+
 ```wildlocate```
 
 ## Train a species in the desktop app
 
 Open **Manage species → Train a new species**. Enter an exact common or scientific
 name, select **Find species**, and confirm the matched mammal. The app checks local
-environmental datasets and downloads research-grade Massachusetts observations
-from iNaturalist. If environmental data is missing, use **Download environmental
-data**, then check the species again.
+environmental datasets and downloads research-grade observations from iNaturalist.
+If environmental data is missing, use **Download environmental data**, then check
+the species again.
 
 After cleaning, at least 25 observations are required to attempt training; their
 spatial distribution and the available background samples can still prevent valid
@@ -59,9 +76,8 @@ python -m unittest discover -s tests -v
 ```
 
 Tests use isolated storage under `artifacts/test-runs`, mock external downloads,
-train and reload a real model, and exercise the desktop workflow and background
-process cancellation. They do not require environmental downloads.
-
+train and reload a real model, and exercise the desktop workflow and regional
+pipeline. Live regional smoke tests and pilot workflows are manual-only.
 
 ## Florida and Arizona (experimental)
 
@@ -88,9 +104,9 @@ National rasters download on demand in reusable 120 km tiles with a 1.2 km margi
 NLCD data is requested at 30 m and elevation at 90 m. First-time training or
 analysis requires internet access and can download substantial data. Subsequent
 locations in cached tiles work offline. Downloads publish only validated,
-complete GeoTIFFs; interrupted tiles are downloaded again. Regional files are
-stored below the application-data directory in `regions/FL` and `regions/AZ`.
-Existing Massachusetts files are not moved or overwritten.
+complete GeoTIFFs; interrupted or corrupt tiles are downloaded again. Regional
+files are stored below the application-data directory in `regions/FL` and
+`regions/AZ`. Existing Massachusetts files are not moved or overwritten.
 
 ```bash
 python -m wildlocate status --region FL
@@ -105,13 +121,13 @@ and `/species?region=FL`; omitting it preserves Massachusetts behavior.
 The development pilot command trains a reviewable model without enabling it:
 
 ```bash
-python -m scripts.train_region_pilot --region FL --species "Marsh Rabbit" --observations 400
-python -m scripts.train_region_pilot --region AZ --species "Black-tailed Jackrabbit" --observations 400
+python scripts/train_region_pilot.py --region FL --species "Marsh Rabbit" --observations 400
+python scripts/train_region_pilot.py --region AZ --species "Black-tailed Jackrabbit" --observations 400
 ```
 
-Pilot sampling is limited to the first 400 returned observations, ordered by ID;
-this is a development sample, not a representative survey. Review the saved
-observation counts and spatial-validation results before enabling a model.
+Pilot sampling is limited to the requested observation count; this is a
+development sample, not a representative survey. Review the saved observation
+counts and spatial-validation results before enabling a model.
 
 Sources: [USGS/MRLC national land-cover services](https://www.mrlc.gov/data-services-page),
 [USGS 3DEP elevation service](https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer),
