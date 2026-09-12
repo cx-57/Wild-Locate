@@ -16,7 +16,7 @@ jobs:
           python-version: '3.12'
       - name: Install probe dependencies
         run: python -m pip install requests pyproj
-      - name: Probe 3DEP exportImage variants
+      - name: Probe 3DEP exportImage size and extent
         run: |
           python - <<'PY'
           import requests
@@ -26,49 +26,34 @@ jobs:
           lat, lon = 28.1, -81.6
           transformer = Transformer.from_crs('EPSG:4326', 'EPSG:5070', always_xy=True)
           x, y = transformer.transform(lon, lat)
-          projected_bbox = f'{x-3000},{y-3000},{x+3000},{y+3000}'
-          geographic_bbox = f'{lon-0.03},{lat-0.03},{lon+0.03},{lat+0.03}'
+          small_bbox = f'{x-3000},{y-3000},{x+3000},{y+3000}'
+          production_bbox = '1318800,598800,1441200,721200'
 
           variants = [
-              ('5070-in-5070-out', {
-                  'bbox': projected_bbox, 'bboxSR': 5070, 'imageSR': 5070,
-                  'size': '64,64', 'format': 'tiff', 'pixelType': 'F32',
-                  'noData': -9999, 'interpolation': 'RSP_BilinearInterpolation', 'f': 'image',
-              }, {}),
-              ('4326-in-5070-out', {
-                  'bbox': geographic_bbox, 'bboxSR': 4326, 'imageSR': 5070,
-                  'size': '64,64', 'format': 'tiff', 'pixelType': 'F32',
-                  'noDataInterpretation': 'esriNoDataMatchAny',
-                  'interpolation': 'RSP_BilinearInterpolation', 'f': 'image',
-              }, {}),
-              ('4326-in-4326-out', {
-                  'bbox': geographic_bbox, 'bboxSR': 4326, 'imageSR': 4326,
-                  'size': '64,64', 'format': 'tiff', 'pixelType': 'F32',
-                  'noDataInterpretation': 'esriNoDataMatchAny',
-                  'interpolation': 'RSP_BilinearInterpolation', 'f': 'image',
-              }, {}),
-              ('4326-browser-ua', {
-                  'bbox': geographic_bbox, 'bboxSR': 4326, 'imageSR': 5070,
-                  'size': '64,64', 'format': 'tiff', 'pixelType': 'F32',
-                  'noDataInterpretation': 'esriNoDataMatchAny',
-                  'interpolation': 'RSP_BilinearInterpolation', 'f': 'image',
-              }, {'User-Agent': 'Mozilla/5.0 Wild-Locate/0.1'}),
+              ('small-extent-1360', small_bbox, '1360,1360', 'RSP_BilinearInterpolation'),
+              ('production-extent-512', production_bbox, '512,512', 'RSP_BilinearInterpolation'),
+              ('production-extent-1024', production_bbox, '1024,1024', 'RSP_BilinearInterpolation'),
+              ('production-extent-1360', production_bbox, '1360,1360', 'RSP_BilinearInterpolation'),
+              ('production-extent-1360-nearest', production_bbox, '1360,1360', 'RSP_NearestNeighbor'),
           ]
 
-          for name, params, headers in variants:
+          for name, bbox, size, interpolation in variants:
+              params = {
+                  'bbox': bbox,
+                  'bboxSR': 5070,
+                  'imageSR': 5070,
+                  'size': size,
+                  'format': 'tiff',
+                  'pixelType': 'F32',
+                  'noData': -9999,
+                  'interpolation': interpolation,
+                  'f': 'image',
+              }
               try:
-                  response = requests.get(url, params=params, headers=headers, timeout=60, allow_redirects=True)
+                  response = requests.get(url, params=params, timeout=120, stream=True)
                   print(name, 'status=', response.status_code, 'type=', response.headers.get('content-type'), 'bytes=', len(response.content))
                   if response.status_code != 200:
                       print('body=', response.text[:300].replace('\n', ' '))
               except Exception as exc:
                   print(name, 'EXCEPTION', repr(exc))
-
-          wcs = 'https://elevation.nationalmap.gov/arcgis/services/3DEPElevation/ImageServer/WCSServer'
-          try:
-              response = requests.get(wcs, params={'service':'WCS','request':'GetCapabilities'}, timeout=60)
-              print('wcs-capabilities', 'status=', response.status_code, 'type=', response.headers.get('content-type'), 'bytes=', len(response.content))
-              print(response.text[:120].replace('\n', ' '))
-          except Exception as exc:
-              print('wcs-capabilities EXCEPTION', repr(exc))
           PY
