@@ -31,8 +31,8 @@ EXPECTED_CRS = rasterio.crs.CRS.from_epsg(5070)
 ELEVATION_URL = 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage'
 RETRYABLE_HTTP_STATUS = {403, 429, 500, 502, 503, 504}
 # The National Map export service is reliable for individual 120 km requests but
-# can return 5xx responses when several image exports run simultaneously. NLCD
-# downloads stay parallel; only 3DEP image exports are serialized.
+# can return transient 5xx responses during bulk export work. NLCD downloads stay
+# parallel; only 3DEP image exports are serialized and retried with backoff.
 _ELEVATION_DOWNLOAD_LOCK = Lock()
 CLASSES = {'forest': {41,42,43}, 'wetland': {90,95}, 'developed': {21,22,23,24},
            'open_water': {11}, 'shrubland': {52}, 'grassland': {71}, 'barren': {31},
@@ -93,7 +93,7 @@ def _valid_raster(path, x, y):
         return False
 
 
-def _download_elevation_tile(bbox, output_path, attempts=3):
+def _download_elevation_tile(bbox, output_path, attempts=6):
     """Download a 3DEP tile, retrying transient failures without concurrent exports."""
     if attempts < 1:
         raise ValueError('attempts must be at least 1')
@@ -117,7 +117,7 @@ def _download_elevation_tile(bbox, output_path, attempts=3):
             with _ELEVATION_DOWNLOAD_LOCK:
                 with requests.get(ELEVATION_URL, params=params, timeout=240, stream=True) as response:
                     if response.status_code in RETRYABLE_HTTP_STATUS and attempt < attempts - 1:
-                        retry_delay = 2 ** attempt
+                        retry_delay = min(2 ** (attempt + 1), 30)
                     else:
                         response.raise_for_status()
                         with output_path.open('wb') as stream:
@@ -131,7 +131,7 @@ def _download_elevation_tile(bbox, output_path, attempts=3):
         except (requests.Timeout, requests.ConnectionError):
             if attempt >= attempts - 1:
                 raise
-            time.sleep(2 ** attempt)
+            time.sleep(min(2 ** (attempt + 1), 30))
 
 
 def tile_paths(region, x, y, progress=None):
