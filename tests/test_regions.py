@@ -205,6 +205,59 @@ class RegionalRasterTests(unittest.TestCase):
             self.assertEqual(get.call_count, 2)
             sleep.assert_called_once()
 
+    def test_elevation_downloads_are_serialized(self):
+        import threading
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+        from wildlocate.core.data.regional import _download_elevation_tile
+
+        guard = threading.Lock()
+        active = 0
+        peak = 0
+
+        class FakeResponse:
+            status_code = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return False
+            def raise_for_status(self):
+                return None
+            def iter_content(self, _size):
+                time.sleep(0.08)
+                yield b'elevation'
+
+        def fake_get(*_args, **_kwargs):
+            nonlocal active, peak
+            with guard:
+                active += 1
+                peak = max(peak, active)
+            response = FakeResponse()
+            original_exit = response.__exit__
+
+            class TrackedResponse(FakeResponse):
+                def __exit__(self, *args):
+                    nonlocal active
+                    try:
+                        return original_exit(*args)
+                    finally:
+                        with guard:
+                            active -= 1
+            return TrackedResponse()
+
+        with tempfile.TemporaryDirectory() as folder, \
+             patch('wildlocate.core.data.regional.requests.get', side_effect=fake_get):
+            root = Path(folder)
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [
+                    executor.submit(_download_elevation_tile, (1, 2, 3, 4), root / f'{index}.tif', 1)
+                    for index in range(2)
+                ]
+                for future in futures:
+                    future.result()
+
+        self.assertEqual(peak, 1)
+
     def test_extract_regional_features_from_synthetic_rasters(self):
         from wildlocate.core.data.regional import extract_regional_features
         from wildlocate.core.features.extract import project_point
