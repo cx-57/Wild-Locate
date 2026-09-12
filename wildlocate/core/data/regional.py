@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+from threading import Lock
 import time
 import uuid
 
@@ -29,6 +30,10 @@ MARGIN = 1200
 EXPECTED_CRS = rasterio.crs.CRS.from_epsg(5070)
 ELEVATION_URL = 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage'
 RETRYABLE_HTTP_STATUS = {403, 429, 500, 502, 503, 504}
+# The National Map export service is reliable for individual 120 km requests but
+# can return 5xx responses when several image exports run simultaneously. NLCD
+# downloads stay parallel; only 3DEP image exports are serialized.
+_ELEVATION_DOWNLOAD_LOCK = Lock()
 CLASSES = {'forest': {41,42,43}, 'wetland': {90,95}, 'developed': {21,22,23,24},
            'open_water': {11}, 'shrubland': {52}, 'grassland': {71}, 'barren': {31},
            'cropland': {81,82}}
@@ -89,7 +94,7 @@ def _valid_raster(path, x, y):
 
 
 def _download_elevation_tile(bbox, output_path, attempts=3):
-    """Download a 3DEP tile, retrying only transient service/network failures."""
+    """Download a 3DEP tile, retrying transient failures without concurrent exports."""
     if attempts < 1:
         raise ValueError('attempts must be at least 1')
 
@@ -108,16 +113,21 @@ def _download_elevation_tile(bbox, output_path, attempts=3):
 
     for attempt in range(attempts):
         try:
-            with requests.get(ELEVATION_URL, params=params, timeout=240, stream=True) as response:
-                if response.status_code in RETRYABLE_HTTP_STATUS and attempt < attempts - 1:
-                    time.sleep(2 ** attempt)
-                    continue
-                response.raise_for_status()
-                with output_path.open('wb') as stream:
-                    for chunk in response.iter_content(1024 * 1024):
-                        if chunk:
-                            stream.write(chunk)
-                return
+            retry_delay = None
+            with _ELEVATION_DOWNLOAD_LOCK:
+                with requests.get(ELEVATION_URL, params=params, timeout=240, stream=True) as response:
+                    if response.status_code in RETRYABLE_HTTP_STATUS and attempt < attempts - 1:
+                        retry_delay = 2 ** attempt
+                    else:
+                        response.raise_for_status()
+                        with output_path.open('wb') as stream:
+                            for chunk in response.iter_content(1024 * 1024):
+                                if chunk:
+                                    stream.write(chunk)
+                        return
+            if retry_delay is not None:
+                time.sleep(retry_delay)
+                continue
         except (requests.Timeout, requests.ConnectionError):
             if attempt >= attempts - 1:
                 raise
