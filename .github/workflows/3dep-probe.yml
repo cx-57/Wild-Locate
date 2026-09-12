@@ -1,0 +1,74 @@
+name: 3dep-probe
+
+on:
+  push:
+    branches:
+      - clean-habitat-rebuild
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install probe dependencies
+        run: python -m pip install requests pyproj
+      - name: Probe 3DEP exportImage variants
+        run: |
+          python - <<'PY'
+          import requests
+          from pyproj import Transformer
+
+          url = 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage'
+          lat, lon = 28.1, -81.6
+          transformer = Transformer.from_crs('EPSG:4326', 'EPSG:5070', always_xy=True)
+          x, y = transformer.transform(lon, lat)
+          projected_bbox = f'{x-3000},{y-3000},{x+3000},{y+3000}'
+          geographic_bbox = f'{lon-0.03},{lat-0.03},{lon+0.03},{lat+0.03}'
+
+          variants = [
+              ('5070-in-5070-out', {
+                  'bbox': projected_bbox, 'bboxSR': 5070, 'imageSR': 5070,
+                  'size': '64,64', 'format': 'tiff', 'pixelType': 'F32',
+                  'noData': -9999, 'interpolation': 'RSP_BilinearInterpolation', 'f': 'image',
+              }, {}),
+              ('4326-in-5070-out', {
+                  'bbox': geographic_bbox, 'bboxSR': 4326, 'imageSR': 5070,
+                  'size': '64,64', 'format': 'tiff', 'pixelType': 'F32',
+                  'noDataInterpretation': 'esriNoDataMatchAny',
+                  'interpolation': 'RSP_BilinearInterpolation', 'f': 'image',
+              }, {}),
+              ('4326-in-4326-out', {
+                  'bbox': geographic_bbox, 'bboxSR': 4326, 'imageSR': 4326,
+                  'size': '64,64', 'format': 'tiff', 'pixelType': 'F32',
+                  'noDataInterpretation': 'esriNoDataMatchAny',
+                  'interpolation': 'RSP_BilinearInterpolation', 'f': 'image',
+              }, {}),
+              ('4326-browser-ua', {
+                  'bbox': geographic_bbox, 'bboxSR': 4326, 'imageSR': 5070,
+                  'size': '64,64', 'format': 'tiff', 'pixelType': 'F32',
+                  'noDataInterpretation': 'esriNoDataMatchAny',
+                  'interpolation': 'RSP_BilinearInterpolation', 'f': 'image',
+              }, {'User-Agent': 'Mozilla/5.0 Wild-Locate/0.1'}),
+          ]
+
+          for name, params, headers in variants:
+              try:
+                  response = requests.get(url, params=params, headers=headers, timeout=60, allow_redirects=True)
+                  print(name, 'status=', response.status_code, 'type=', response.headers.get('content-type'), 'bytes=', len(response.content))
+                  if response.status_code != 200:
+                      print('body=', response.text[:300].replace('\n', ' '))
+              except Exception as exc:
+                  print(name, 'EXCEPTION', repr(exc))
+
+          wcs = 'https://elevation.nationalmap.gov/arcgis/services/3DEPElevation/ImageServer/WCSServer'
+          try:
+              response = requests.get(wcs, params={'service':'WCS','request':'GetCapabilities'}, timeout=60)
+              print('wcs-capabilities', 'status=', response.status_code, 'type=', response.headers.get('content-type'), 'bytes=', len(response.content))
+              print(response.text[:120].replace('\n', ' '))
+          except Exception as exc:
+              print('wcs-capabilities EXCEPTION', repr(exc))
+          PY
