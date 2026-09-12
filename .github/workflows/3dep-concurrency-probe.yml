@@ -1,4 +1,4 @@
-name: 3dep-concurrency-probe
+name: 3dep-fallback-probe
 
 on:
   push:
@@ -16,41 +16,35 @@ jobs:
           python-version: '3.12'
       - name: Install probe dependency
         run: python -m pip install requests
-      - name: Compare concurrent and serial 3DEP requests
+      - name: Probe failing 3DEP tile sizes and subtiles
         run: |
           python - <<'PY'
-          from concurrent.futures import ThreadPoolExecutor
           import requests
 
           url = 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage'
-          bboxes = [
-              (1438800, 718800, 1561200, 841200),
-              (1438800, 358800, 1561200, 481200),
-              (1438800, 238800, 1561200, 361200),
-          ]
+          failing = (1438800, 718800, 1561200, 841200)
 
-          def fetch(bbox):
+          def fetch(name, bbox, size):
               params = {
                   'bbox': ','.join(map(str, bbox)), 'bboxSR': 5070, 'imageSR': 5070,
-                  'size': '1360,1360', 'format': 'tiff', 'pixelType': 'F32',
+                  'size': size, 'format': 'tiff', 'pixelType': 'F32',
                   'noData': -9999, 'interpolation': 'RSP_BilinearInterpolation', 'f': 'image',
               }
-              try:
-                  with requests.get(url, params=params, timeout=240, stream=True) as response:
-                      status = response.status_code
-                      total = 0
-                      for chunk in response.iter_content(1024 * 1024):
-                          total += len(chunk)
-                      return bbox, status, total
-              except Exception as exc:
-                  return bbox, type(exc).__name__, str(exc)
+              with requests.get(url, params=params, timeout=240, stream=True) as response:
+                  total = sum(len(chunk) for chunk in response.iter_content(1024 * 1024))
+                  print(name, 'status=', response.status_code, 'bytes=', total)
 
-          print('CONCURRENT')
-          with ThreadPoolExecutor(max_workers=3) as executor:
-              for result in executor.map(fetch, bboxes):
-                  print(result)
+          for size in ('512,512', '1024,1024', '1360,1360'):
+              fetch('full-' + size, failing, size)
 
-          print('SERIAL')
-          for bbox in bboxes:
-              print(fetch(bbox))
+          x0, y0, x1, y1 = failing
+          xm, ym = (x0 + x1) / 2, (y0 + y1) / 2
+          quarters = [
+              (x0, y0, xm, ym),
+              (xm, y0, x1, ym),
+              (x0, ym, xm, y1),
+              (xm, ym, x1, y1),
+          ]
+          for index, bbox in enumerate(quarters, 1):
+              fetch(f'quarter-{index}', bbox, '680,680')
           PY
