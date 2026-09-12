@@ -1,9 +1,7 @@
 name: florida-pilot
 
 on:
-  push:
-    branches:
-      - clean-habitat-rebuild
+  workflow_dispatch:
 
 jobs:
   pilot:
