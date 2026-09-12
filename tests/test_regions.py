@@ -54,7 +54,6 @@ class RegionTests(unittest.TestCase):
             self.assertEqual(resolve_model('Bobcat','FL').id,'a'*32)
             self.assertEqual(resolve_model('Bobcat','AZ').id,'b'*32)
             self.assertEqual(list_models('FL')[0].region,'FL')
-            # Corrupt region identity must hide the artifact, never cross-load it.
             p=Path(folder)/'models'/('a'*32)/'metrics.json'
             metadata=json.loads(p.read_text());metadata['region']='AZ';atomic_json(p,metadata)
             self.assertEqual(available_species('FL'),())
@@ -177,6 +176,34 @@ class RegionalRasterTests(unittest.TestCase):
             self.assertEqual(returned, paths)
             download.assert_not_called()
             elevation_request.assert_not_called()
+
+    def test_elevation_download_retries_transient_http_failure(self):
+        from requests.exceptions import HTTPError
+        from wildlocate.core.data.regional import _download_elevation_tile
+
+        class FakeResponse:
+            def __init__(self, status, content=b''):
+                self.status_code = status
+                self._content = content
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return False
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise HTTPError(f'{self.status_code} error')
+            def iter_content(self, _size):
+                yield self._content
+
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / 'elevation.tif'
+            responses = [FakeResponse(403), FakeResponse(200, b'good-second-response')]
+            with patch('wildlocate.core.data.regional.requests.get', side_effect=responses) as get, \
+                 patch('wildlocate.core.data.regional.time.sleep') as sleep:
+                _download_elevation_tile((1, 2, 3, 4), output, attempts=3)
+            self.assertEqual(output.read_bytes(), b'good-second-response')
+            self.assertEqual(get.call_count, 2)
+            sleep.assert_called_once()
 
     def test_extract_regional_features_from_synthetic_rasters(self):
         from wildlocate.core.data.regional import extract_regional_features
