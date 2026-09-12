@@ -13,9 +13,11 @@ from PyQt6.QtWidgets import (
 )
 
 from wildlocate.core.registry import available_species
+from wildlocate.core.regions import REGIONS, get_region
 from wildlocate.gui.client import PredictionClient
 from wildlocate.gui.formatting import coordinates, feature_display, ordinal
 from wildlocate.gui.location_map import LocationMap
+from wildlocate.gui.insights import InsightsPanel
 from wildlocate.gui.theme import STYLESHEET
 from wildlocate.gui.widgets import BrandMark, Disclosure, SuitabilityGauge, app_icon, divider, label
 
@@ -30,8 +32,11 @@ def button(text, role="", callback=None):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, username=None):
         super().__init__()
+        self.region = "MA"
+        self.username = username
+        self.signed_out = False
         self.setWindowTitle("Wild-Locate · Habitat Explorer")
         self.setWindowIcon(app_icon())
         self.resize(1240, 930)
@@ -76,6 +81,10 @@ class MainWindow(QMainWindow):
         self.cards.addWidget(self.result_card, 1)
         self.page_layout.addLayout(self.cards)
 
+        self.insights = Disclosure("Habitat insights · experimental")
+        self.page_layout.addWidget(self.insights)
+        self.insights.hide()
+
         self.environment = Disclosure("Environmental Conditions")
         self.environment.body_layout.addWidget(label("Measured conditions at the selected location. These values do not indicate each feature's contribution to the score.", "muted", True))
         self.feature_table = QGridLayout()
@@ -99,6 +108,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(shell)
         self.responsive_layout()
 
+        self.region_choice.currentIndexChanged.connect(self.change_region)
         self.species.currentTextChanged.connect(self.inputs_changed)
         for field in (self.latitude, self.longitude):
             field.textChanged.connect(self.inputs_changed)
@@ -126,9 +136,18 @@ class MainWindow(QMainWindow):
         row.addWidget(BrandMark())
         row.addWidget(label("Wild-Locate", "brand"))
         row.addStretch()
+        if self.username:
+            row.addWidget(label(self.username, "small"))
+            row.addWidget(button("Sign out", "link", self.sign_out))
         self.manage_species_button = button("Manage species", "secondary", self.manage_species)
         row.addWidget(self.manage_species_button)
-        row.addWidget(label("MASSACHUSETTS", "pill"), 0, Qt.AlignmentFlag.AlignVCenter)
+        self.region_choice = QComboBox()
+        self.region_choice.setAccessibleName("State")
+        for code, region in REGIONS.items():
+            self.region_choice.addItem(region.name, code)
+            if code != "MA":
+                self.region_choice.setItemData(self.region_choice.count() - 1, "Experimental regional models", Qt.ItemDataRole.ToolTipRole)
+        row.addWidget(self.region_choice)
         nav.setFixedHeight(76)
         return nav
 
@@ -152,12 +171,11 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(26, 25, 26, 25)
         layout.setSpacing(10)
         layout.addWidget(label("Explore a location", "heading"))
-        layout.addWidget(label("One species. One place. A new perspective.", "muted", True))
         layout.addSpacing(3)
         species_label = label("CHOOSE A SPECIES", "step")
         layout.addWidget(species_label)
         self.species = QComboBox()
-        self.species.addItems(available_species())
+        self.species.addItems(available_species(self.region))
         self.species.setCurrentText("North American River Otter")
         species_label.setBuddy(self.species)
         self.species.setAccessibleName("Species")
@@ -198,7 +216,8 @@ class MainWindow(QMainWindow):
             column.addWidget(field)
             coordinate_layout.addLayout(column, 1)
         self.manual_coordinates.body_layout.addLayout(coordinate_layout)
-        self.manual_coordinates.body_layout.addWidget(label("Decimal degrees · available Massachusetts data", "small", True))
+        self.coordinate_note = label("Decimal degrees · Massachusetts", "small", True)
+        self.manual_coordinates.body_layout.addWidget(self.coordinate_note)
         self.example_button = button("↗  Use example coordinates", "link", self.use_example)
         self.example_button.setToolTip("Fills an example location. Select Analyze Habitat to get a real prediction.")
         self.manual_coordinates.body_layout.addWidget(self.example_button)
@@ -315,7 +334,7 @@ class MainWindow(QMainWindow):
         entries = (
             ("Observations", "iNaturalist species observations used in model training."),
             ("Land & terrain", "NLCD land cover and impervious surface; USGS elevation and derived terrain conditions."),
-            ("Water & roads", "Massachusetts hydrography and road data describe proximity to water and roads."),
+            ("Regional features", "Massachusetts uses local water and road distances. Florida and Arizona use a separate raster-only model with shrubland, grassland and other land-cover types."),
             ("Relative suitability", "Percentiles compare this location's score with the species' comparison locations. They are not a measure of model confidence."),
         )
         for index, (title, description) in enumerate(entries):
@@ -339,8 +358,25 @@ class MainWindow(QMainWindow):
         if hasattr(self, "cards"):
             self.responsive_layout()
 
+    def change_region(self):
+        self.client.close()
+        self.region = self.region_choice.currentData()
+        region = get_region(self.region)
+        self.refresh_species()
+        self.coordinate_note.setText(f"Decimal degrees · {region.name}")
+        self.location_map.region_center = region.center
+        self.use_example()
+        self.empty_text.setText("Choose a species and location, then select Analyze Habitat.")
+        if not available_species(self.region):
+            self.empty_text.setText(f"No enabled models for {region.name} yet. Open Manage species to train and review a model.")
+            self.input_note.setText("Suggested mammals: " + ", ".join(region.examples))
+        elif self.region != "MA":
+            self.input_note.setText("Experimental regional models · first analysis may download environmental tiles.")
+
     def use_example(self):
         lat, lon = (42.28, -71.35) if self.species.currentText() == "Red Fox" else (42.3718, -72.2820)
+        if self.region != "MA":
+            lat, lon = get_region(self.region).center
         self.latitude.setText(f"{lat:.4f}")
         self.longitude.setText(f"{lon:.4f}")
         self.sync_map(recenter=True)
@@ -350,7 +386,7 @@ class MainWindow(QMainWindow):
         if self.client.busy:
             return
         from wildlocate.gui.species_manager import SpeciesManager
-        dialog = SpeciesManager(self)
+        dialog = SpeciesManager(self, region=self.region)
         dialog.models_changed.connect(self.refresh_species)
         dialog.exec()
         self.refresh_species()
@@ -360,11 +396,15 @@ class MainWindow(QMainWindow):
         selected = self.species.currentText()
         with QSignalBlocker(self.species):
             self.species.clear()
-            self.species.addItems(available_species())
+            self.species.addItems(available_species(self.region))
+            self.species.setPlaceholderText("No enabled models — open Manage species")
             if self.species.findText(selected) >= 0:
                 self.species.setCurrentText(selected)
         # A new model for the same species also invalidates the previous result.
         self.inputs_changed()
+        self.analyze_button.setEnabled(bool(self.species.count()))
+        if self.species.count() and self.result is None:
+            self.empty_text.setText("Choose a species and location, then select Analyze Habitat.")
         popup = self.species.view()
         popup.setMinimumWidth(popup.sizeHintForColumn(0) + 2 * popup.frameWidth())
 
@@ -399,10 +439,11 @@ class MainWindow(QMainWindow):
             self.result = None
             self.stack.setCurrentWidget(self.empty_page)
             self.environment.hide()
+            self.insights.hide()
             self.export_button.hide()
             self.empty_text.setText("Your selection has changed. Analyze this location to see a new assessment.")
             self.result_status.setText("AWAITING ANALYSIS")
-        self.input_note.setText("Your analysis runs locally on this computer.")
+        self.input_note.setText("Your analysis runs locally on this computer." if self.region == "MA" else "Analysis runs locally; uncached environmental tiles need an internet connection.")
 
     def read_coordinates(self):
         values = []
@@ -432,7 +473,7 @@ class MainWindow(QMainWindow):
         if self.client.busy:
             return
         species = self.species.currentText()
-        if species not in available_species():
+        if species not in available_species(self.region):
             self.species.setProperty("invalid", True)
             self.species.style().unpolish(self.species)
             self.species.style().polish(self.species)
@@ -445,20 +486,22 @@ class MainWindow(QMainWindow):
             return
         self.error.hide()
         self.result = None
+        self.insights.hide()
         self.environment.hide()
         self.export_button.hide()
         self.stack.setCurrentWidget(self.empty_page)
-        self.empty_text.setText("Reading local environmental data and evaluating the species model.")
+        self.empty_text.setText("Reading local environmental data and evaluating the species model." if self.region == "MA" else "Loading environmental tiles and evaluating the regional model. Missing tiles will download first.")
         self.result_status.setText("ANALYSIS IN PROGRESS")
         self.set_busy(True)
         self._started_at = time.monotonic()
         self.update_elapsed()
         self.timer.start()
-        self.client.analyze(species, *values)
+        self.client.analyze(species, *values, region=self.region)
 
     def set_busy(self, busy):
-        for widget in (self.species, self.latitude, self.longitude, self.location_map, self.example_button, self.analyze_button, self.manage_species_button):
+        for widget in (self.species, self.latitude, self.longitude, self.location_map, self.example_button, self.analyze_button, self.manage_species_button, self.region_choice):
             widget.setEnabled(not busy)
+        self.analyze_button.setEnabled(not busy and bool(self.species.count()))
         self.cancel_button.setVisible(busy)
         self.progress.setVisible(busy)
         self.analyze_button.setText("Analyzing habitat…" if busy else "Analyze Habitat   →")
@@ -496,8 +539,18 @@ class MainWindow(QMainWindow):
         self.feature_table.setColumnStretch(0, 1)
         self.environment.set_expanded(False)
         self.environment.show()
+        self.show_insights(result.get("insights", {}))
         self.export_button.show()
         self.input_note.setText("Assessment complete. Explore another location.")
+
+    def show_insights(self, insights):
+        while self.insights.body_layout.count():
+            item = self.insights.body_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.insights.body_layout.addWidget(InsightsPanel(insights))
+        self.insights.set_expanded(True)
+        self.insights.show()
 
     def show_error(self, message):
         self.set_busy(False)
@@ -533,6 +586,10 @@ class MainWindow(QMainWindow):
             return
         self.input_note.setText("Assessment exported successfully.")
 
+    def sign_out(self):
+        self.signed_out = True
+        self.close()
+
     def closeEvent(self, event):
         self.client.close()
         self.location_map.shutdown()
@@ -556,9 +613,17 @@ def create_application(argv=None):
 
 def main():
     app = create_application()
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+    from wildlocate.gui.login import LoginDialog
+    from PyQt6.QtWidgets import QDialog
+    while True:
+        login = LoginDialog()
+        if login.exec() != QDialog.DialogCode.Accepted:
+            break
+        window = MainWindow(username=login.username)
+        window.show()
+        app.exec()
+        if not window.signed_out:
+            break
 
 
 if __name__ == "__main__":

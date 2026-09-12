@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import logging
 
 import joblib
 import numpy as np
@@ -141,14 +142,16 @@ def print_results(
         print(f"{name}: {feature_values[name]}")
 
 
-def predict_species(species, latitude, longitude):
+def predict_species(species, latitude, longitude, region="MA"):
+    from wildlocate.core.regions import get_region
+    region = get_region(region).code
     species = species.strip()
     if not species:
         raise ValueError("Species name cannot be empty.")
 
     validate_lat_lon(latitude, longitude)
 
-    record = resolve_model(species)
+    record = resolve_model(species, region)
     species = record.species
     model, metrics = load_model_and_metadata(species, record)
 
@@ -159,7 +162,13 @@ def predict_species(species, latitude, longitude):
             "Please restore the model metadata."
         )
 
-    extracted_features = extract_features(latitude, longitude)
+    if region == "MA":
+        extracted_features = extract_features(latitude, longitude)
+    else:
+        from wildlocate.core.data.regional import SCHEMA, extract_regional_features
+        if metrics.get("feature_schema") != SCHEMA or metrics.get("region") != region:
+            raise ValueError("This model is not compatible with the selected region.")
+        extracted_features = extract_regional_features(latitude, longitude, region)
 
     prediction_frame = build_prediction_frame(extracted_features, predictor_names)
 
@@ -172,11 +181,23 @@ def predict_species(species, latitude, longitude):
     if not np.isfinite(predicted_score):
         raise RuntimeError("Prediction failed: the computed suitability score is not finite.")
 
-    comparison_scores, _ = load_comparison_scores(model, predictor_names, species, record)
+    comparison_scores, comparison = load_comparison_scores(model, predictor_names, species, record)
     percentile = percentile_of_score(predicted_score, comparison_scores)
     category = category_for_percentile(percentile)
 
+    from wildlocate.core.insights import habitat_insights
+    try:
+        insights = habitat_insights(model, prediction_frame, comparison, comparison_scores, predicted_score)
+        insights["species"] = species
+        insights["top_features"] = metrics.get("selected_model_top_features", [])
+        insights["feature_values"] = {name: float(extracted_features[name]) for name in predictor_names}
+    except Exception:
+        logging.getLogger(__name__).exception("Habitat insights unavailable")
+        insights = {"error": "Insights could not be calculated for this model. Your assessment is still available."}
+
     return {
+        "region": region,
+        "insights": insights,
         "species": species,
         "latitude": latitude,
         "longitude": longitude,
@@ -191,13 +212,14 @@ def predict_species(species, latitude, longitude):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Predict relative habitat suitability for a species at a Massachusetts location.",
+        description="Predict relative habitat suitability within a supported state.",
     )
+    parser.add_argument("--region", choices=("MA", "FL", "AZ"), default="MA")
     parser.add_argument("--species", required=True, help="Species name, for example Fisher or Bobcat.")
     parser.add_argument("--lat", required=True, type=float, help="Latitude in EPSG:4326.")
     parser.add_argument("--lon", required=True, type=float, help="Longitude in EPSG:4326.")
     args = parser.parse_args()
-    result = predict_species(args.species, args.lat, args.lon)
+    result = predict_species(args.species, args.lat, args.lon, args.region)
     print_results(
         species=result["species"],
         latitude=result["latitude"],

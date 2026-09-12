@@ -11,6 +11,7 @@ import uuid
 
 import wildlocate
 from wildlocate.core.catalog import SUPPORTED_SPECIES
+from wildlocate.core.regions import get_region
 from wildlocate.core.data.environment import get_user_data_dir
 
 BUNDLED_DATA = Path(wildlocate.__file__).resolve().parent / "data" / "processed"
@@ -25,6 +26,7 @@ class ModelRecord:
     features_path: Path
     custom: bool = False
     created_at: str = ""
+    region: str = "MA"
 
     def metrics(self):
         return json.loads(self.metrics_path.read_text(encoding="utf-8"))
@@ -65,6 +67,10 @@ def complete(record):
                for p in (record.model_path, record.metrics_path, record.features_path)):
             return False
         metadata = record.metrics()
+        if get_region(metadata.get("region", "MA")).code != record.region:
+            return False
+        if record.region != "MA" and (metadata.get("region") != record.region or metadata.get("feature_schema") != "regional-raster-v1"):
+            return False
         predictors = metadata["predictor_names"]
         if not isinstance(predictors, list) or not predictors or not all(isinstance(p, str) for p in predictors):
             return False
@@ -89,10 +95,11 @@ def custom_record(identifier):
     if manifest.get("version") != 1 or not isinstance(name, str) or not name.strip() or len(name) > 100:
         raise ValueError("Invalid model manifest.")
     return ModelRecord(identifier, name, folder / "model.joblib", folder / "metrics.json",
-                       folder / "features.csv", True, str(manifest.get("created_at", "")))
+                       folder / "features.csv", True, str(manifest.get("created_at", "")), get_region(manifest.get("region", "MA")).code)
 
 
-def list_models():
+def list_models(region="MA"):
+    region = get_region(region).code
     records = []
     for name in SUPPORTED_SPECIES:
         slug = name.lower().replace(" ", "_")
@@ -109,7 +116,7 @@ def list_models():
                     records.append(record)
             except (OSError, ValueError, TypeError):
                 continue
-    return records
+    return [record for record in records if record.region == region]
 
 
 def _activation():
@@ -120,45 +127,51 @@ def _activation():
         return {}
 
 
-def available_models():
-    records = list_models()
+def available_models(region="MA"):
+    records = list_models(region)
     available = {r.species.casefold(): r for r in records if not r.custom}
     active = _activation()
     for record in records:
-        if record.custom and active.get(record.species.casefold()) == record.id:
+        if record.custom and active.get(_activation_key(record)) == record.id:
             available[record.species.casefold()] = record
     return available
 
 
-def available_species():
-    return tuple(record.species for record in available_models().values())
+def available_species(region="MA"):
+    return tuple(record.species for record in available_models(region).values())
 
 
-def resolve_model(species):
-    record = available_models().get(species.strip().casefold())
+def resolve_model(species, region="MA"):
+    record = available_models(region).get(species.strip().casefold())
     if record is None:
         raise FileNotFoundError(f"No trained model found for {species}. Enable a complete model in Manage species.")
     return record
 
 
+def _activation_key(record):
+    name = record.species.casefold()
+    return name if record.region == "MA" else f"{record.region}:{name}"
+
+
 def enable_model(identifier):
-    records = {r.id: r for r in list_models()}
+    from wildlocate.core.regions import REGIONS
+    records = {r.id: r for region in REGIONS for r in list_models(region)}
     if identifier not in records:
         raise ValueError("This model is incomplete or no longer available.")
     record = records[identifier]
     active = _activation()
     if record.custom:
-        active[record.species.casefold()] = record.id
+        active[_activation_key(record)] = record.id
     else:
-        active.pop(record.species.casefold(), None)
+        active.pop(_activation_key(record), None)
     atomic_json(get_user_data_dir() / "active_models.json", active)
 
 
 def delete_model(identifier):
     record = custom_record(identifier)
     active = _activation()
-    if active.get(record.species.casefold()) == identifier:
-        active.pop(record.species.casefold())
+    if active.get(_activation_key(record)) == identifier:
+        active.pop(_activation_key(record))
         atomic_json(get_user_data_dir() / "active_models.json", active)
     shutil.rmtree(_child(custom_root(), identifier))
 

@@ -53,7 +53,9 @@ class LocationMap(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._ready = False
+        self._pending_recenter = False
         self._location = (42.3718, -72.2820)
+        self.region_center = (42.2, -71.7)
         self.view = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -119,8 +121,11 @@ class LocationMap(QWidget):
         self.send_state()
 
     def send_state(self, *, recenter=False):
+        self._pending_recenter = self._pending_recenter or recenter
         if self._ready:
-            state = {"latitude": self._location[0], "longitude": self._location[1], "enabled": self.isEnabled(), "recenter": recenter}
+            recenter = self._pending_recenter
+            self._pending_recenter = False
+            state = {"latitude": self._location[0], "longitude": self._location[1], "enabled": self.isEnabled(), "recenter": recenter, "regionCenter": self.region_center}
             self.page.runJavaScript(f"window.setLocationState({json.dumps(state, allow_nan=False)});")
 
     def shutdown(self):

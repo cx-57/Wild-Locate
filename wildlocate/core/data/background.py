@@ -15,7 +15,7 @@ from wildlocate.core.data.inaturalist import resolve_species
 
 API_BASE = "https://api.inaturalist.org/v1"
 MAMMAL_POOL_FILE = Path("data/processed/samples/massachusetts_mammal_pool.csv")
-DEFAULT_MAX_MAMMAL_POOL = 50000
+DEFAULT_MAX_MAMMAL_POOL = 20000
 
 
 def species_slug(species_name):
@@ -36,6 +36,10 @@ def api_get(endpoint, params=None):
 
 
 def find_place_id(place_name):
+    from wildlocate.core.regions import REGIONS
+    for region in REGIONS.values():
+        if str(place_name).casefold() in (region.name.casefold(), region.code.casefold()):
+            return region.place_id
     place_name = place_name.strip()
     if not place_name:
         raise ValueError("Place name is required.")
@@ -48,7 +52,7 @@ def find_place_id(place_name):
 
 
 def download_mammal_pool(place_name="Massachusetts", progress=None):
-    mammals = resolve_species("Mammalia")
+    mammals = {"taxon_id": 40151}
     place_id = find_place_id(place_name)
 
     rows = []
@@ -113,10 +117,10 @@ def download_mammal_pool(place_name="Massachusetts", progress=None):
 
         id_above = batch[-1]["id"]
         if progress:
-            progress(f"Downloaded {total_rows:,} Massachusetts background observations…")
+            progress(f"Downloaded {total_rows:,} {place_name} background observations…")
 
     if not rows:
-        raise RuntimeError("No usable Massachusetts Mammalia observations were found.")
+        raise RuntimeError(f"No usable {place_name} Mammalia observations were found.")
 
     df = pd.DataFrame(rows)
     df["observation_id"] = pd.to_numeric(df["observation_id"], errors="coerce")
@@ -126,7 +130,7 @@ def download_mammal_pool(place_name="Massachusetts", progress=None):
     return df
 
 
-def load_or_create_mammal_pool(refresh_pool=False, pool_file=None, progress=None):
+def load_or_create_mammal_pool(refresh_pool=False, pool_file=None, progress=None, place_name="Massachusetts"):
     pool_file = Path(pool_file) if pool_file is not None else MAMMAL_POOL_FILE
     if pool_file.exists() and not refresh_pool:
         pool_df = pd.read_csv(pool_file)
@@ -142,7 +146,7 @@ def load_or_create_mammal_pool(refresh_pool=False, pool_file=None, progress=None
             )
         return pool_df
 
-    pool_df = download_mammal_pool(progress=progress)
+    pool_df = download_mammal_pool(place_name=place_name, progress=progress)
     pool_file.parent.mkdir(parents=True, exist_ok=True)
     pool_df.to_csv(pool_file, index=False)
     return pool_df
@@ -229,7 +233,7 @@ def generate_background(
     exclusion_distance_m=1000,
     thinning_distance_m=500,
     random_state=42,
-    *, samples_dir="data/processed/samples", pool_file=None, taxon_id=None, progress=None,
+    *, samples_dir="data/processed/samples", pool_file=None, taxon_id=None, progress=None, place_name="Massachusetts",
 ):
     if background_ratio <= 0:
         raise ValueError("background_ratio must be greater than 0.")
@@ -257,7 +261,7 @@ def generate_background(
     if presence_df.empty:
         raise RuntimeError(f"No usable presence points found in {presence_file}.")
 
-    pool_df = load_or_create_mammal_pool(pool_file=pool_file, progress=progress)
+    pool_df = load_or_create_mammal_pool(pool_file=pool_file, progress=progress, place_name=place_name)
     candidate_df = filter_mammal_pool(pool_df, target_taxon_id)
 
     if candidate_df.empty:

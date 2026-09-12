@@ -18,6 +18,7 @@ app = FastAPI(
 PredictionRequest = create_model(
     "PredictionRequest",
     __config__=ConfigDict(extra="forbid", str_strip_whitespace=True),
+    region=(str, Field(default="MA", pattern="^(MA|FL|AZ)$")),
     species=(str, Field(min_length=1, max_length=100)),
     latitude=(float, Field(ge=-90, le=90, allow_inf_nan=False, strict=True)),
     longitude=(float, Field(ge=-180, le=180, allow_inf_nan=False, strict=True)),
@@ -30,6 +31,7 @@ SuitabilityCategory = Enum("SuitabilityCategory", {
 
 PredictionResponse = create_model(
     "PredictionResponse",
+    region=(str, ...),
     species=(str, ...),
     latitude=(float, ...),
     longitude=(float, ...),
@@ -57,8 +59,13 @@ async def validation_error_handler(request, exc):
 
 
 @app.get("/species")
-def species():
-    return {"species": list(available_species())}
+def species(region: str = "MA"):
+    from wildlocate.core.regions import get_region
+    try:
+        selected = get_region(region)
+    except ValueError as exc:
+        raise PredictionError(str(exc), "unsupported_region") from exc
+    return {"region": selected.code, "species": list(available_species(selected.code))}
 
 
 @app.get("/health")
@@ -76,4 +83,4 @@ def predict(request=Body(...)):
         raise RequestValidationError([
             {**error, "loc": ("body", *error["loc"])} for error in exc.errors()
         ]) from exc
-    return assess_habitat(request.species, request.latitude, request.longitude)
+    return assess_habitat(request.species, request.latitude, request.longitude, request.region)

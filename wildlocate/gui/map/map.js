@@ -4,6 +4,7 @@ const map = L.map("map", {scrollWheelZoom: false, minZoom: 3, maxZoom: 18})
   .setView([42.2, -71.7], 7);
 const pinIcon = L.divIcon({className: "location-pin", html: "<span></span>", iconSize: [32, 32], iconAnchor: [16, 16]});
 let marker = null;
+let regionCenter = [42.2, -71.7];
 let bridge = null;
 let enabled = true;
 let tilesAvailable = false;
@@ -34,9 +35,10 @@ function selectLocation(latlng) {
 }
 
 map.on("click", (event) => selectLocation(event.latlng));
-document.getElementById("reset").addEventListener("click", () => map.setView([42.2, -71.7], 7));
+document.getElementById("reset").addEventListener("click", () => map.setView(regionCenter, 7));
 
 window.setLocationState = (state) => {
+  if (state.regionCenter) regionCenter = state.regionCenter;
   enabled = state.enabled;
   document.body.setAttribute("aria-busy", String(!enabled));
   if (marker) { map.removeLayer(marker); marker = null; }

@@ -14,6 +14,10 @@ def feature_display(name, value):
     radius = "250 m" if name.endswith("_250m") else "1 km"
     labels = {
         "forest_fraction": "Forest cover",
+        "shrubland_fraction": "Shrubland cover",
+        "grassland_fraction": "Grassland cover",
+        "barren_fraction": "Bare ground",
+        "cropland_fraction": "Agricultural land",
         "wetland_fraction": "Wetland cover",
         "developed_fraction": "Developed land",
         "open_water_fraction": "Open water",
