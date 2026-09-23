@@ -127,7 +127,8 @@ $('sign-out').addEventListener('click', async () => {
   }
   activeJob = null;
   result = null;
-  if ($('species-dialog').open) $('species-dialog').close();
+  $('species-page').hidden = true;
+  $('explore-page').hidden = false;
   setAuthMode(false);
   showAuth();
 });
@@ -205,6 +206,7 @@ function enterApp(preserveSelection = false) {
   $('auth-screen').hidden = true;
   $('app-shell').hidden = false;
   $('account-name').textContent = config.username;
+  showSection('explore');
   initMap();
   applyConfig(config, preserveSelection);
   setTimeout(() => map && map.invalidateSize({pan: false}), 0);
@@ -220,11 +222,18 @@ function applyConfig(data, preserveSelection = true) {
   $('region').replaceChildren(
     ...data.regions.map(state => new Option(state.name, state.code))
   );
+  $('species-region').replaceChildren(
+    ...data.regions.map(state => new Option(state.name, state.code))
+  );
   if (previousRegion && data.regions.some(state => state.code === previousRegion)) {
     $('region').value = previousRegion;
   } else if (data.regions.some(state => state.code === 'MA')) {
     $('region').value = 'MA';
   }
+  if (!managerRegion || !data.regions.some(state => state.code === managerRegion)) {
+    managerRegion = $('region').value || 'MA';
+  }
+  $('species-region').value = managerRegion;
   $('inputs').disabled = false;
   changeRegion(!preserveSelection, previousSpecies);
 }
@@ -268,7 +277,8 @@ function setBusy(value) {
   busy = value;
   document.body.classList.toggle('busy', value);
   $('inputs').disabled = value || !config;
-  $('manage-species').disabled = value;
+  $('train-species-nav').disabled = value;
+  $('models-nav').disabled = value;
   $('analyze').disabled = value || !$('species').value;
   $('cancel').hidden = !value;
   $('cancel').disabled = !activeJob;
@@ -594,16 +604,26 @@ $('reset-map').addEventListener('click', () => {
   if (state) map.setView(state.center, 7);
 });
 
-function managerTab(tab) {
-  const models = tab === 'models';
-  $('models-tab').setAttribute('aria-selected', String(models));
-  $('train-tab').setAttribute('aria-selected', String(!models));
-  $('models-panel').hidden = !models;
-  $('train-panel').hidden = models;
-}
+function showSection(section, focus = null) {
+  const studio = section === 'species';
+  $('explore-page').hidden = studio;
+  $('species-page').hidden = !studio;
+  $('explore-nav').setAttribute('aria-current', studio ? 'false' : 'page');
+  $('train-species-nav').setAttribute('aria-current', studio && focus !== 'models' ? 'page' : 'false');
+  $('models-nav').setAttribute('aria-current', studio && focus === 'models' ? 'page' : 'false');
 
-$('models-tab').addEventListener('click', () => managerTab('models'));
-$('train-tab').addEventListener('click', () => managerTab('train'));
+  if (!studio) {
+    setTimeout(() => map && map.invalidateSize({pan: false}), 0);
+    window.scrollTo({top: 0, behavior: 'smooth'});
+    return;
+  }
+
+  if (focus === 'models') {
+    setTimeout(() => $('model-library').scrollIntoView({behavior: 'smooth', block: 'start'}), 0);
+  } else {
+    setTimeout(() => $('training-query').focus(), 0);
+  }
+}
 
 function reviewStat(title, value) {
   const box = document.createElement('div');
@@ -677,6 +697,7 @@ function renderModels(selectId = null) {
     selectedModelId = modelRecords[0]?.id || null;
   }
 
+  $('model-count').textContent = `${modelRecords.length} model${modelRecords.length === 1 ? '' : 's'}`;
   $('model-list').replaceChildren();
   for (const record of modelRecords) {
     const row = document.createElement('button');
@@ -718,35 +739,45 @@ async function loadModels(selectId = null) {
   }
 }
 
-async function openManager() {
+async function openSpeciesStudio(focus = 'train') {
   if (busy) return;
-  managerRegion = $('region').value;
+  managerRegion = $('region').value || 'MA';
+
+  $('species-region').replaceChildren(
+    ...config.regions.map(state => new Option(state.name, state.code))
+  );
+  $('species-region').value = managerRegion;
+
   const state = config.regions.find(item => item.code === managerRegion);
   $('manager-subtitle').textContent =
-    `Train, review, and enable habitat models for ${state?.name || managerRegion} mammals.`;
-  managerTab('models');
-  resetTrainingUi();
+    `${state?.name || managerRegion} · models and training use the selected region's environmental data.`;
+
+  if (!trainingJobId || trainingState?.status === 'completed' || trainingState?.status === 'cancelled') {
+    resetTrainingUi();
+  }
   await loadModels();
-  $('species-dialog').showModal();
+  showSection('species', focus);
 }
 
-$('manage-species').addEventListener('click', openManager);
+$('explore-nav').addEventListener('click', () => showSection('explore'));
+$('train-species-nav').addEventListener('click', () => openSpeciesStudio('train'));
+$('models-nav').addEventListener('click', () => openSpeciesStudio('models'));
 
-async function closeManager() {
+$('species-region').addEventListener('change', async () => {
   if (trainingState?.status === 'running') {
-    const stop = window.confirm('Cancel the current training operation and close?');
-    if (!stop) return;
+    const change = window.confirm('Changing region will cancel the current training operation. Continue?');
+    if (!change) {
+      $('species-region').value = managerRegion;
+      return;
+    }
     await cancelTraining();
   }
-  $('species-dialog').close();
-}
-
-$('close-manager').addEventListener('click', closeManager);
-$('species-dialog').addEventListener('cancel', event => {
-  if (trainingState?.status === 'running') {
-    event.preventDefault();
-    closeManager();
-  }
+  managerRegion = $('species-region').value;
+  const state = config.regions.find(item => item.code === managerRegion);
+  $('manager-subtitle').textContent =
+    `${state?.name || managerRegion} · models and training use the selected region's environmental data.`;
+  resetTrainingUi();
+  await loadModels();
 });
 
 $('enable-model').addEventListener('click', async () => {
@@ -784,8 +815,9 @@ $('delete-model').addEventListener('click', async () => {
 $('retrain-model').addEventListener('click', () => {
   const record = modelRecords.find(item => item.id === selectedModelId);
   if (!record) return;
-  managerTab('train');
+  showSection('species', 'train');
   $('training-query').value = record.species;
+  $('training-query').focus();
   startTrainingResolve();
 });
 
@@ -830,7 +862,7 @@ async function handleTrainingCompletion(job) {
   $('model-message').textContent =
     'Training complete. Review the validation results, then enable the model when ready.';
   $('model-message').hidden = false;
-  managerTab('models');
+  $('model-library').scrollIntoView({behavior: 'smooth', block: 'start'});
 }
 
 function renderTraining(job) {
