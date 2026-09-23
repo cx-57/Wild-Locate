@@ -1,3 +1,3 @@
-"""Wild-Locate: desktop habitat suitability explorer for Massachusetts wildlife."""
+"""Wild-Locate desktop habitat suitability explorer."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

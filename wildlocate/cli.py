@@ -39,19 +39,20 @@ def cmd_init(args):
         initialize(args.region)
         return
     from wildlocate.core.data.environment import get_user_data_dir
+    from wildlocate.core.data.downloads import (
+        download_elevation, download_hydrography, download_nlcd, download_roads,
+    )
     data_dir = get_user_data_dir()
     raw_dir = data_dir / "raw"
 
     print(f"Wild-Locate: downloading environmental datasets to {data_dir}")
     print("This may take several minutes.\n")
 
-    from wildlocate.core.data.nlcd.download import download_nlcd
     nlcd_dir = raw_dir / "nlcd"
     print("Downloading NLCD land cover and impervious surface...")
     download_nlcd(nlcd_dir, year=2025, tiles=4)
     print()
 
-    from wildlocate.core.data.usgs_3dep.download import download_elevation
     usgs_dir = raw_dir / "usgs_3dep"
     print("Downloading USGS 3DEP elevation...")
     download_elevation(
@@ -60,13 +61,11 @@ def cmd_init(args):
     )
     print()
 
-    from wildlocate.core.data.massdep_hydrography.download import download_hydrography
     hydro_dir = raw_dir / "massdep_hydrography"
     print("Downloading MassDEP hydrography...")
     download_hydrography(hydro_dir / "massachusetts_hydrography.zip")
     print()
 
-    from wildlocate.core.data.massdot_roads.download import download_roads
     roads_dir = raw_dir / "massdot_roads"
     print("Downloading MassDOT roads...")
     download_roads(roads_dir / "massachusetts_roads.zip")

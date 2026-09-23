@@ -19,7 +19,7 @@ import requests
 from shapely.geometry import Point, shape
 
 from wildlocate.core.regions import get_region, region_root
-from wildlocate.core.features.extract import (
+from wildlocate.core.environment_features import (
     project_point, read_local_window, terrain_window_stats, fraction,
     validate_point_is_evaluable,
 )
@@ -135,7 +135,7 @@ def _download_elevation_tile(bbox, output_path, attempts=6):
 
 
 def tile_paths(region, x, y, progress=None):
-    from wildlocate.core.data.nlcd.download import (
+    from wildlocate.core.data.downloads import (
         download_tile, LANDCOVER_WCS, LANDCOVER_COVERAGE,
         IMPERVIOUS_WCS, IMPERVIOUS_COVERAGE,
     )

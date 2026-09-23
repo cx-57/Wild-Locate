@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
 import math
-import sys
+import uuid
 from pathlib import Path
 
 import geopandas as gpd
@@ -10,11 +11,12 @@ import numpy as np
 import pandas as pd
 import rasterio
 from pyproj import Transformer
+from rasterio.enums import Resampling
 from rasterio.windows import Window
+from rasterio.warp import calculate_default_transform, reproject
 from shapely.geometry import Point
 
-from wildlocate.core.data.environment import ENVIRONMENT_PATHS
-from wildlocate.core.features.terrain_feature_extraction import ensure_projected_elevation_raster
+from wildlocate.core.data.environment import ENVIRONMENT_PATHS, get_user_data_dir
 
 VALID_CLASSES = {
     "forest": {41, 42, 43},
@@ -43,6 +45,60 @@ FEATURE_ORDER = [
 ]
 
 _CONTEXT_CACHE = None
+
+
+def ensure_projected_elevation_raster(root=None):
+    root = Path(root) if root is not None else get_user_data_dir()
+    source_path = root / "raw" / "usgs_3dep" / "elevation_3dep.tif"
+    target_path = root / "raw" / "usgs_3dep" / "elevation_3dep_5070.tif"
+
+    if target_path.exists():
+        return target_path
+
+    if not source_path.exists():
+        raise FileNotFoundError(
+            f"Could not find source elevation raster at {source_path}."
+        )
+
+    temporary_path = target_path.with_name(f".{target_path.stem}.{uuid.uuid4().hex}.tif")
+    try:
+        with rasterio.open(source_path) as src:
+            transform, width, height = calculate_default_transform(
+                src.crs,
+                "EPSG:5070",
+                src.width,
+                src.height,
+                *src.bounds,
+            )
+
+            kwargs = src.meta.copy()
+            kwargs.update(
+                {
+                    "crs": "EPSG:5070",
+                    "transform": transform,
+                    "width": width,
+                    "height": height,
+                }
+            )
+
+            with rasterio.open(temporary_path, "w", **kwargs) as dst:
+                for band_index in range(1, src.count + 1):
+                    reproject(
+                        source=rasterio.band(src, band_index),
+                        destination=rasterio.band(dst, band_index),
+                        src_transform=src.transform,
+                        src_crs=src.crs,
+                        dst_transform=transform,
+                        dst_crs="EPSG:5070",
+                        resampling=Resampling.bilinear,
+                    )
+
+        os.replace(temporary_path, target_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+    return target_path
+
 
 
 def get_paths():

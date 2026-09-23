@@ -3,13 +3,16 @@
 import argparse
 import json
 import logging
+import math
 
 import joblib
 import numpy as np
 import pandas as pd
+from pyproj import Geod
 
-from wildlocate.core.features.extract import extract_features
+from wildlocate.core.environment_features import extract_features
 from wildlocate.core.registry import resolve_model
+from wildlocate.core.regions import get_region
 
 
 def format_model_name(model_name):
@@ -143,7 +146,6 @@ def print_results(
 
 
 def predict_species(species, latitude, longitude, region="MA", *, username=None):
-    from wildlocate.core.regions import get_region
     region = get_region(region).code
     species = species.strip()
     if not species:
@@ -185,7 +187,6 @@ def predict_species(species, latitude, longitude, region="MA", *, username=None)
     percentile = percentile_of_score(predicted_score, comparison_scores)
     category = category_for_percentile(percentile)
 
-    from wildlocate.core.insights import habitat_insights
     try:
         insights = habitat_insights(model, prediction_frame, comparison, comparison_scores, predicted_score)
         insights["species"] = species
@@ -207,6 +208,140 @@ def predict_species(species, latitude, longitude, region="MA", *, username=None)
         "model": format_model_name(metrics.get("selected_model", "Unknown Model")),
         "training_observations": int(metrics.get("presence_count", 0)),
         "features": {name: float(extracted_features[name]) for name in predictor_names},
+    }
+
+
+
+def habitat_insights(model, frame, comparison, comparison_scores, score):
+    def evaluate(candidate):
+        value = float(model.predict_proba(candidate)[0, 1])
+        if not np.isfinite(value):
+            raise ValueError('Non-finite scenario prediction')
+        return value, int(round(100 * np.mean(comparison_scores < value)))
+
+    influences = []
+    for name in frame.columns:
+        values = comparison[name].replace([np.inf, -np.inf], np.nan).dropna()
+        if values.empty:
+            continue
+        reference = float(values.median())
+        candidate = frame.copy()
+        candidate.loc[:, name] = reference
+        alternative, _ = evaluate(candidate)
+        influences.append({'feature': name, 'current': float(frame.iloc[0][name]),
+                           'reference': reference, 'effect': score - alternative})
+    influences.sort(key=lambda item: abs(item['effect']), reverse=True)
+
+    scenarios = []
+    tested = 0
+    baseline_percentile = int(round(100 * np.mean(comparison_scores < score)))
+    # Search a small, explicit grid; retain the strongest visible gain per
+    # scenario type. These are model experiments, not an intervention optimizer.
+    for kind in ('forest', 'impervious'):
+        best = None
+        for fraction in (.1, .25, .5):
+            candidate = frame.copy()
+            changes = []
+            for radius in ('250m', '1000m'):
+                if kind == 'forest':
+                    source, target = f'developed_fraction_{radius}', f'forest_fraction_{radius}'
+                    if source not in frame or target not in frame:
+                        continue
+                    amount = min(float(frame.iloc[0][source]) * fraction,
+                                 1 - float(frame.iloc[0][target]))
+                    updates = {source: float(frame.iloc[0][source]) - amount,
+                               target: float(frame.iloc[0][target]) + amount}
+                else:
+                    source = f'mean_impervious_{radius}'
+                    if source not in frame:
+                        continue
+                    updates = {source: float(frame.iloc[0][source]) * (1 - fraction)}
+                for name, value in updates.items():
+                    before = float(frame.iloc[0][name])
+                    if abs(value - before) > 1e-10:
+                        candidate.loc[:, name] = value
+                        changes.append({'feature': name, 'before': before, 'after': value})
+            if not changes:
+                continue
+            tested += 1
+            value, percentile = evaluate(candidate)
+            delta = value - score
+            if delta < .001 or (best is not None and delta <= best['delta'] + 1e-10):
+                continue
+            percent = int(fraction * 100)
+            title = (f'Replace {percent}% of developed cover with forest' if kind == 'forest'
+                     else f'Reduce impervious surface by {percent}%')
+            best = {'title': title, 'score': value, 'delta': delta,
+                    'percentile': percentile, 'changes': changes}
+        if best is not None:
+            scenarios.append(best)
+    scenarios.sort(key=lambda item: item['delta'], reverse=True)
+    return {'influences': influences, 'scenarios': scenarios,
+            'baseline_score': float(score), 'baseline_percentile': baseline_percentile,
+            'scenarios_tested': tested}
+
+
+def build_grid(latitude, longitude, radius_km):
+    if isinstance(radius_km, bool) or radius_km not in (10, 25, 50):
+        raise ValueError('Choose a radius of 10, 25 or 50 km.')
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in (latitude, longitude)):
+        raise ValueError('Enter finite latitude and longitude coordinates.')
+    validate_lat_lon(latitude, longitude)
+    geod = Geod(ellps='WGS84')
+    spacing = radius_km * 1000 / 5
+    points = []
+    for north in range(-5, 6):
+        for east in range(-5, 6):
+            if north*north + east*east > 25:
+                continue
+            distance = math.hypot(east, north) * spacing
+            lon, lat, _ = geod.fwd(longitude, latitude, math.degrees(math.atan2(east, north)), distance)
+            points.append({'latitude': float(lat), 'longitude': float(lon)})
+    return points
+
+
+def predict_area(species, latitude, longitude, radius_km, region='MA', *, username=None):
+    points = build_grid(latitude, longitude, radius_km)
+    region = get_region(region).code
+    record = resolve_model(species, region, username=username)
+    model, metrics = load_model_and_metadata(record.species, record)
+    predictors = metrics.get('predictor_names')
+    if not predictors:
+        raise RuntimeError('Saved model metadata does not include predictor names.')
+    if not hasattr(model, 'predict_proba'):
+        raise RuntimeError('Saved model does not support suitability scoring.')
+    extractor = extract_features
+    if region != 'MA':
+        from wildlocate.core.data.regional import SCHEMA, extract_regional_features
+        if metrics.get('feature_schema') != SCHEMA or metrics.get('region') != region:
+            raise ValueError('This model is not compatible with the selected region.')
+        extractor = lambda lat, lon: extract_regional_features(lat, lon, region)
+    comparison_scores, _ = load_comparison_scores(model, predictors, record.species, record)
+    for point in points:
+        try:
+            features = extractor(point['latitude'], point['longitude'])
+            frame = build_prediction_frame(features, predictors)
+            if not np.isfinite(frame.to_numpy(dtype=float)).all():
+                raise ValueError('Environmental feature extraction returned missing values')
+        except ValueError as exc:
+            if not str(exc).startswith(('Requested coordinate cannot be evaluated', 'Environmental feature extraction returned missing values')):
+                raise
+            point.update(status='unavailable', reason='Outside model coverage or incomplete environmental data.')
+            continue
+        score = float(model.predict_proba(frame)[0, 1])
+        if not math.isfinite(score):
+            raise RuntimeError('Prediction returned a non-finite suitability score.')
+        percentile = percentile_of_score(score, comparison_scores)
+        point.update(status='ok', score=score, percentile=percentile, category=category_for_percentile(percentile))
+    scored = [p for p in points if p['status'] == 'ok']
+    return {
+        'analysis_type': 'regional', 'species': record.species, 'region': region,
+        'latitude': latitude, 'longitude': longitude, 'radius_km': radius_km,
+        'grid_spacing_km': radius_km / 5, 'points': points,
+        'evaluated_points': len(scored), 'unavailable_points': len(points) - len(scored),
+        'mean_score': float(np.mean([p['score'] for p in scored])) if scored else None,
+        'model': format_model_name(metrics.get('selected_model', 'Unknown Model')),
+        'training_observations': int(metrics.get('presence_count', 0)),
     }
 
 

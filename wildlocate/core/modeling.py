@@ -16,6 +16,8 @@ from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from wildlocate.core.data.inaturalist import species_slug
+
 OUTPUT_DIR = Path("data/processed/models")
 TARGET_COLUMN = "presence"
 RANDOM_STATE = 42
@@ -32,10 +34,6 @@ EXCLUDED_COLUMNS = {
     "species_slug",
 }
 MODEL_COMPLEXITY = {"LogisticRegression": 0, "RandomForest": 1, "XGBoost": 2}
-
-
-def species_slug(species):
-    return species.strip().lower().replace(" ", "_")
 
 
 def load_dataset(dataset_file):

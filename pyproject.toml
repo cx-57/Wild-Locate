@@ -8,19 +8,18 @@ name = "wildlocate"
 version = "0.2.0"
 requires-python = ">=3.10"
 dependencies = [
-    "fastapi",
     "geopandas",
     "joblib",
     "numpy",
     "pandas",
     "platformdirs",
-    "pydantic",
     "pyproj",
     "PyQt6",
     "PyQt6-WebEngine",
     "rasterio",
     "requests",
     "scikit-learn",
+    "xgboost",
     "shapely",
 ]
 
@@ -30,13 +29,12 @@ wildlocate = "wildlocate.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["wildlocate*"]
+namespaces = true
 
 [tool.setuptools.package-data]
 "wildlocate" = [
     "core/data/state_boundaries.geojson",
     "gui/map/index.html",
-    "gui/map/map.css",
-    "gui/map/map.js",
     "gui/map/vendor/*",
     "data/processed/models/*.joblib",
     "data/processed/models/*.json",
