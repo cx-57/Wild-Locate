@@ -137,56 +137,33 @@ function initMap() {
   if (map || !window.L) {
     if (!window.L) {
       $('map-status').hidden = false;
-      $('map-status').textContent = 'Map unavailable. You can still enter coordinates manually.';
+      $('map-status').textContent = 'Map unavailable. Enter coordinates manually.';
       document.querySelector('.manual').open = true;
     }
     return;
   }
 
-  map = L.map('map', {scrollWheelZoom: false, minZoom: 3, maxZoom: 18})
+  map = L.map('map', {scrollWheelZoom: false, minZoom: 3, maxZoom: 19})
     .setView([42.37, -72.28], 9);
   overlay = L.layerGroup().addTo(map);
 
-  let fallbackStarted = false;
-  let primaryErrors = 0;
-  const showMapFailure = message => {
-    $('map-status').hidden = false;
-    $('map-status').textContent = message;
-  };
-
-  const fallback = () => {
-    if (fallbackStarted) return;
-    fallbackStarted = true;
-    if (map.hasLayer(primary)) map.removeLayer(primary);
-    const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 18,
+  const tiles = L.tileLayer(
+    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {
+      maxZoom: 19,
       noWrap: true,
       attribution: '&copy; OpenStreetMap contributors',
-    });
-    osm.on('tileerror', () => {
-      showMapFailure('Map tiles are unavailable. Manual coordinates and habitat analysis still work.');
-    });
-    osm.addTo(map);
-    showMapFailure('Primary map tiles were blocked, so Wild-Locate switched to its OpenStreetMap fallback.');
-  };
-
-  const primary = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    {
-      subdomains: 'abcd',
-      maxZoom: 18,
-      noWrap: true,
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
     }
   );
-  primary.on('tileerror', () => {
-    primaryErrors += 1;
-    if (primaryErrors >= 2) fallback();
+
+  tiles.on('tileerror', () => {
+    $('map-status').hidden = false;
+    $('map-status').textContent = 'Map tiles are temporarily unavailable. Enter coordinates manually.';
   });
-  primary.on('load', () => {
-    if (!fallbackStarted) $('map-status').hidden = true;
+  tiles.on('load', () => {
+    $('map-status').hidden = true;
   });
-  primary.addTo(map);
+  tiles.addTo(map);
 
   map.on('click', event => {
     if (busy) return;
@@ -262,7 +239,7 @@ function selection() {
     throw Error('Latitude must be −90 to 90; longitude must be −180 to 180.');
   }
   if (!$('species').value) {
-    throw Error('No enabled model is available for this state. Open Manage species.');
+    throw Error('No enabled model is available for this state. Train or enable a model.');
   }
   return {
     species: $('species').value,
@@ -379,7 +356,7 @@ function changed(recenter = false) {
   draw(recenter);
   $('status').textContent = $('species').value
     ? 'Ready to explore.'
-    : 'No enabled model for this state. Open Manage species.';
+    : 'No enabled model for this state. Train or enable a model.';
 }
 
 function mode(value) {
@@ -411,7 +388,7 @@ function changeRegion(resetLocation = true, preferredSpecies = '') {
 
   $('species-note').textContent = state.species.length
     ? `${state.species.length} enabled species model${state.species.length === 1 ? '' : 's'} available.`
-    : 'No enabled model for this state. Train or enable one in Manage species.';
+    : 'No enabled model for this state. Train or enable a model.';
   $('analyze').disabled = !state.species.length;
   changed(resetLocation);
 }
@@ -900,8 +877,9 @@ function renderTraining(job) {
 
   if (job.status === 'resolved') {
     resolvedTaxon = job.result;
+    const groupName = job.result.iconic_taxon_name === 'Reptilia' ? 'Reptile' : 'Mammal';
     $('training-match').textContent =
-      `${job.result.common_name} (${job.result.scientific_name}) · Mammal species · ${config.regions.find(item => item.code === managerRegion)?.name || managerRegion} observations only`;
+      `${job.result.common_name} (${job.result.scientific_name}) · ${groupName} · ${config.regions.find(item => item.code === managerRegion)?.name || managerRegion}`;
     $('training-match').hidden = false;
     $('prepare-training').hidden = false;
   } else if (job.status === 'prepared') {
