@@ -5,17 +5,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from wildlocate.core.features.extract import FEATURE_ORDER, extract_features
+from wildlocate.core.environment_features import extract_features
+from wildlocate.core.data.inaturalist import species_slug
 
 DEFAULT_INPUT_DIR = Path("data/processed/samples")
 DEFAULT_OUTPUT_DIR = Path("data/processed/features/species")
 DEFAULT_FAILURE_THRESHOLD = 0.05
-
-
-def species_slug(species_name):
-    slug = species_name.strip().lower().replace(" ", "_")
-    slug = "_".join(part for part in slug.split("_") if part)
-    return slug
 
 
 def validate_training_points(df):
