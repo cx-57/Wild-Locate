@@ -964,7 +964,7 @@ function renderTrainingSuggestions(data) {
     button.addEventListener('click', async () => {
       $('training-query').value = suggestion.common_name;
       clearTrainingSuggestions();
-      await startTrainingResolve(suggestion.scientific_name);
+      await startTrainingResolve(suggestion.common_name);
     });
     container.append(button);
   }
