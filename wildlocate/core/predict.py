@@ -14,7 +14,7 @@ from pyproj import Geod
 
 from wildlocate.core.environment import extract_features
 from wildlocate.core.registry import resolve_model
-from wildlocate.core.regions import get_region
+from wildlocate.core.regional import get_region
 
 
 def format_model_name(model_name):
@@ -321,7 +321,7 @@ class PredictionError(Exception):
 
 
 def assess_habitat(species, latitude, longitude, region="MA", *, username=None, radius_km=None):
-    from wildlocate.core.regions import get_region
+    from wildlocate.core.regional import get_region
     try:
         selected_region = get_region(region)
     except ValueError as exc:
