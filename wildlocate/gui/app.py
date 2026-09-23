@@ -555,7 +555,7 @@ from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
 from wildlocate.core.registry import normalize_username
 from wildlocate.core.registry import cleanup_job
-from wildlocate.core.training import new_job_id
+from wildlocate.core.modeling import new_job_id
 
 
 # Habitat prediction
