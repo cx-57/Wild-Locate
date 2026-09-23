@@ -147,11 +147,14 @@ press **Ctrl+C** to stop the server and any active analysis. To choose another
 port or skip automatically opening the browser, use
 `wildlocate web --port 8766 --no-browser`.
 
-Sign in with the same local account system used by the desktop app. From the
-browser you can manage species models, review validation metrics, train a new
-mammal model, enable a saved custom model, and delete custom models. The selected
-account is also passed to habitat prediction so enabled custom models appear in
-the normal species dropdown.
+Sign in with the same local account system used by the desktop app. The browser
+now has a first-class **Species Studio** alongside the habitat explorer. Training a
+new species is the primary workflow: resolve a mammal through iNaturalist, check
+usable observations and environmental data, train candidate models with spatial
+validation, then review the saved model before enabling it. A persistent model
+library shows bundled and custom models, validation metrics, enable/retrain
+controls, and custom-model deletion. The selected account is also passed to
+habitat prediction so enabled custom models appear in the normal species dropdown.
 
 Click the map or enter coordinates, then run a point analysis or an area analysis
 with a 10/25/50 km radius. The browser uses your existing local datasets and
