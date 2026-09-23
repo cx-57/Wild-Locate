@@ -249,96 +249,17 @@ def save_cleaned_observations(df, species_name, output_dir="data/processed/sampl
     return output_path
 
 
-MAMMAL_POOL_FILE = Path("data/processed/samples/massachusetts_mammal_pool.csv")
-DEFAULT_MAX_MAMMAL_POOL = 20000
-
-
-def download_mammal_pool(place_name="Massachusetts", progress=None):
-    mammals = {"taxon_id": 40151}
-    place_id = find_place_id(place_name)
-
-    rows = []
-    id_above = 0
-    total_rows = 0
-
-    while total_rows < DEFAULT_MAX_MAMMAL_POOL:
-        params = {
-            "taxon_id": mammals["taxon_id"],
-            "place_id": place_id,
-            "quality_grade": "research",
-            "verifiable": "true",
-            "captive": "false",
-            "per_page": 200,
-            "order_by": "id",
-            "order": "asc",
-            "id_above": id_above,
-        }
-
-        data = api_get("/observations", params)
-        batch = data.get("results", [])
-        if not batch:
-            break
-
-        for obs in batch:
-            row = extract_observation_row(obs)
-            if row is None:
-                continue
-            rows.append({
-                key: row[key]
-                for key in (
-                    "observation_id", "taxon_id", "taxon_name", "common_name",
-                    "latitude", "longitude", "positional_accuracy", "observed_on",
-                    "coordinates_obscured",
-                )
-            })
-            total_rows += 1
-            if total_rows >= DEFAULT_MAX_MAMMAL_POOL:
-                break
-
-        if len(batch) < params["per_page"]:
-            break
-
-        id_above = batch[-1]["id"]
-        if progress:
-            progress(f"Downloaded {total_rows:,} {place_name} background observations…")
-
-    if not rows:
-        raise RuntimeError(f"No usable {place_name} Mammalia observations were found.")
-
-    df = pd.DataFrame(rows)
-    df["observation_id"] = pd.to_numeric(df["observation_id"], errors="coerce")
-    df["taxon_id"] = pd.to_numeric(df["taxon_id"], errors="coerce")
-    df["positional_accuracy"] = pd.to_numeric(df["positional_accuracy"], errors="coerce")
-
-    return df
-
-
-def load_or_create_mammal_pool(refresh_pool=False, pool_file=None, progress=None, place_name="Massachusetts"):
-    pool_file = Path(pool_file) if pool_file is not None else MAMMAL_POOL_FILE
-    if pool_file.exists() and not refresh_pool:
-        pool_df = pd.read_csv(pool_file)
-        required_columns = {
-            "observation_id", "taxon_id", "taxon_name", "common_name",
-            "latitude", "longitude", "positional_accuracy", "observed_on",
-            "coordinates_obscured",
-        }
-        missing = required_columns.difference(pool_df.columns)
-        if missing:
-            raise ValueError(
-                f"Existing mammal pool at {pool_file} is missing required columns: {sorted(missing)}"
-            )
-        return pool_df
-
-    pool_df = download_mammal_pool(place_name=place_name, progress=progress)
-    pool_file.parent.mkdir(parents=True, exist_ok=True)
-    pool_df.to_csv(pool_file, index=False)
-    return pool_df
-
 
 TARGET_GROUPS = {
     "Mammalia": {"taxon_id": 40151, "label": "mammal"},
     "Reptilia": {"taxon_id": 26036, "label": "reptile"},
 }
+BACKGROUND_POOL_COLUMNS = (
+    "observation_id", "taxon_id", "taxon_name", "common_name",
+    "latitude", "longitude", "positional_accuracy", "observed_on",
+    "coordinates_obscured",
+)
+DEFAULT_MAX_BACKGROUND_POOL = 20000
 
 
 def target_group_label(target_group):
@@ -348,10 +269,10 @@ def target_group_label(target_group):
         raise ValueError(f"Unsupported target group: {target_group}") from exc
 
 
-def download_target_group_pool(target_group, place_name="Massachusetts", progress=None):
-    if target_group == "Mammalia":
-        return download_mammal_pool(place_name=place_name, progress=progress)
-
+def download_target_group_pool(
+    target_group, place_name="Massachusetts", progress=None,
+    max_observations=DEFAULT_MAX_BACKGROUND_POOL,
+):
     group = TARGET_GROUPS.get(target_group)
     if group is None:
         raise ValueError(f"Unsupported target group: {target_group}")
@@ -359,9 +280,8 @@ def download_target_group_pool(target_group, place_name="Massachusetts", progres
     place_id = find_place_id(place_name)
     rows = []
     id_above = 0
-    total_rows = 0
 
-    while total_rows < DEFAULT_MAX_MAMMAL_POOL:
+    while len(rows) < max_observations:
         params = {
             "taxon_id": group["taxon_id"],
             "place_id": place_id,
@@ -380,26 +300,19 @@ def download_target_group_pool(target_group, place_name="Massachusetts", progres
 
         for obs in batch:
             row = extract_observation_row(obs)
-            if row is None:
-                continue
-            rows.append({
-                key: row[key]
-                for key in (
-                    "observation_id", "taxon_id", "taxon_name", "common_name",
-                    "latitude", "longitude", "positional_accuracy", "observed_on",
-                    "coordinates_obscured",
-                )
-            })
-            total_rows += 1
-            if total_rows >= DEFAULT_MAX_MAMMAL_POOL:
-                break
+            if row is not None:
+                rows.append({key: row[key] for key in BACKGROUND_POOL_COLUMNS})
+                if len(rows) >= max_observations:
+                    break
 
         if len(batch) < params["per_page"]:
             break
-
         id_above = batch[-1]["id"]
         if progress:
-            progress(f"Downloaded {total_rows:,} {place_name} {group['label']} background observations…")
+            progress(
+                f"Downloaded {len(rows):,} {place_name} "
+                f"{group['label']} background observations…"
+            )
 
     if not rows:
         raise RuntimeError(
@@ -407,38 +320,29 @@ def download_target_group_pool(target_group, place_name="Massachusetts", progres
         )
 
     df = pd.DataFrame(rows)
-    df["observation_id"] = pd.to_numeric(df["observation_id"], errors="coerce")
-    df["taxon_id"] = pd.to_numeric(df["taxon_id"], errors="coerce")
-    df["positional_accuracy"] = pd.to_numeric(df["positional_accuracy"], errors="coerce")
+    for column in ("observation_id", "taxon_id", "positional_accuracy"):
+        df[column] = pd.to_numeric(df[column], errors="coerce")
     return df
 
 
 def load_or_create_target_group_pool(
-    target_group, refresh_pool=False, pool_file=None, progress=None, place_name="Massachusetts"
+    target_group, refresh_pool=False, pool_file=None, progress=None,
+    place_name="Massachusetts",
 ):
-    if target_group == "Mammalia":
-        return load_or_create_mammal_pool(
-            refresh_pool=refresh_pool,
-            pool_file=pool_file,
-            progress=progress,
-            place_name=place_name,
-        )
-
     label = target_group_label(target_group)
-    pool_file = Path(pool_file) if pool_file is not None else Path(
-        f"data/processed/samples/massachusetts_{label}_pool.csv"
-    )
+    if pool_file is None:
+        place_slug = re.sub(r"[^a-z0-9]+", "_", place_name.casefold()).strip("_")
+        pool_file = Path("data/processed/samples") / f"{place_slug}_{label}_pool.csv"
+    else:
+        pool_file = Path(pool_file)
+
     if pool_file.exists() and not refresh_pool:
         pool_df = pd.read_csv(pool_file)
-        required_columns = {
-            "observation_id", "taxon_id", "taxon_name", "common_name",
-            "latitude", "longitude", "positional_accuracy", "observed_on",
-            "coordinates_obscured",
-        }
-        missing = required_columns.difference(pool_df.columns)
+        missing = set(BACKGROUND_POOL_COLUMNS).difference(pool_df.columns)
         if missing:
             raise ValueError(
-                f"Existing {label} pool at {pool_file} is missing required columns: {sorted(missing)}"
+                f"Existing {label} pool at {pool_file} is missing required columns: "
+                f"{sorted(missing)}"
             )
         return pool_df
 
@@ -448,11 +352,6 @@ def load_or_create_target_group_pool(
     pool_file.parent.mkdir(parents=True, exist_ok=True)
     pool_df.to_csv(pool_file, index=False)
     return pool_df
-
-
-def filter_target_group_pool(pool_df, target_taxon_id):
-    return filter_mammal_pool(pool_df, target_taxon_id)
-
 
 def project_to_5070(df):
     transformer = Transformer.from_crs("EPSG:4326", "EPSG:5070", always_xy=True)
@@ -464,7 +363,7 @@ def project_to_5070(df):
     return projected
 
 
-def filter_mammal_pool(pool_df, target_taxon_id):
+def filter_target_group_pool(pool_df, target_taxon_id):
     if pool_df is None or pool_df.empty:
         return pool_df
 
