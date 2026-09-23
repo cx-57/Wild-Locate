@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QTabWidget, QVBoxLayout, QWidget,
 )
 
-from wildlocate.core.accounts import authenticate, normalize_username
+from wildlocate.core.registry import authenticate, normalize_username
 from wildlocate.core.registry import available_models, delete_model, enable_model, list_models
 from wildlocate.gui.components import BrandMark, Disclosure, app_icon, label
 from wildlocate.gui.workers import TrainingClient
