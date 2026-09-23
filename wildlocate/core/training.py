@@ -5,7 +5,7 @@ import os
 import shutil
 import uuid
 
-from wildlocate.core.accounts import normalize_username
+from wildlocate.core.registry import normalize_username
 from wildlocate.core.registry import (
     ModelRecord, atomic_json, cleanup_job, complete, custom_root, job_path,
 )
@@ -28,11 +28,11 @@ class TrainingSession:
 
     def initialize_environment(self):
         if self.region.code != "MA":
-            from wildlocate.core.data.regional import initialize
+            from wildlocate.core.regional import initialize
             initialize(self.region, self.progress)
             return {}
         from wildlocate.cli import cmd_init
-        from wildlocate.core.data.environment import get_user_data_dir
+        from wildlocate.core.environment import get_user_data_dir
         destination = get_user_data_dir() / "raw"
         staging = self.workspace / "environment"
         previous = os.environ.get("WILDLOCATE_DATA_DIR")
@@ -54,7 +54,7 @@ class TrainingSession:
         return {}
 
     def resolve(self, query):
-        from wildlocate.core.data.inaturalist import resolve_species
+        from wildlocate.core.observations import resolve_species
         self.taxon = None
         self.prepared = None
         self.progress("Finding the species on iNaturalist…")
@@ -69,8 +69,8 @@ class TrainingSession:
         return taxon
 
     def prepare(self):
-        from wildlocate.core.data.environment import DatasetPaths
-        from wildlocate.core.data.inaturalist import (
+        from wildlocate.core.environment import DatasetPaths
+        from wildlocate.core.observations import (
             clean_species_observations, download_species_observations, save_cleaned_observations,
         )
         self.prepared = None
@@ -80,7 +80,7 @@ class TrainingSession:
         if self.region.code == "MA":
             DatasetPaths().validate()
         else:
-            from wildlocate.core.data.regional import initialize
+            from wildlocate.core.regional import initialize
             initialize(self.region, self.progress)
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.progress(f"Downloading research-grade {self.region.name} observations…")
@@ -100,9 +100,9 @@ class TrainingSession:
         return self.prepared
 
     def train(self):
-        from wildlocate.core.data.background import generate_background
-        from wildlocate.core.data.inaturalist import species_slug
-        from wildlocate.core.dataset import build_species_dataset
+        from wildlocate.core.observations import generate_background
+        from wildlocate.core.observations import species_slug
+        from wildlocate.core.modeling import build_species_dataset
         from wildlocate.core.modeling import train_species
         if self.prepared is None or self.taxon is None:
             raise ValueError("Check species data before starting training.")
