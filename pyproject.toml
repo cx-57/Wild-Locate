@@ -35,6 +35,9 @@ namespaces = true
 "wildlocate" = [
     "core/data/state_boundaries.geojson",
     "gui/map/index.html",
+    "web/*.html",
+    "web/*.css",
+    "web/*.js",
     "gui/map/vendor/*",
     "data/processed/models/*.joblib",
     "data/processed/models/*.json",

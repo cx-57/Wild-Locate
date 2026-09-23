@@ -1,5 +1,6 @@
 import argparse
 import os
+import stat
 import sys
 from pathlib import Path
 
@@ -17,6 +18,15 @@ def _configure_qt_runtime():
     qt_root = pyqt_root / "Qt6"
     frameworks_dir = qt_root / "lib"
     platforms_dir = qt_root / "plugins" / "platforms"
+
+    # Qt ignores files carrying macOS's hidden flag, even at a valid plugin path.
+    # Perform this before importing the GUI so the installed command works directly.
+    plugins_dir = qt_root / "plugins"
+    if plugins_dir.exists():
+        for path in (plugins_dir, *plugins_dir.rglob("*")):
+            flags = path.stat().st_flags
+            if flags & stat.UF_HIDDEN:
+                os.chflags(path, flags & ~stat.UF_HIDDEN)
 
     if platforms_dir.exists():
         os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(platforms_dir)
@@ -116,6 +126,9 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("gui", help="Launch the GUI (default)")
+    web = subparsers.add_parser("web", help="Open the local browser app")
+    web.add_argument("--port", type=int, default=8765)
+    web.add_argument("--no-browser", action="store_true")
     for command, help_text in (("init", "Set up environmental datasets"), ("status", "Check dataset availability")):
         sub = subparsers.add_parser(command, help=help_text)
         sub.add_argument("--region", choices=("MA", "FL", "AZ"), default="MA")
@@ -124,6 +137,9 @@ def main():
 
     if args.command in (None, "gui"):
         cmd_gui(args)
+    elif args.command == "web":
+        from wildlocate.web.server import serve
+        serve(port=args.port, open_browser=not args.no_browser)
     elif args.command == "init":
         cmd_init(args)
     elif args.command == "status":

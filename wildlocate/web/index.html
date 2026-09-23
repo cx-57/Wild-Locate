@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Wild-Locate · Habitat Explorer</title>
+  <link rel="stylesheet" href="/vendor/leaflet.css">
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/vendor/leaflet.js"></script>
+  <script defer src="/app.js"></script>
+</head>
+<body>
+<header><a class="brand" href="/" aria-label="Wild-Locate home"><span class="mark" aria-hidden="true">↗</span> Wild-Locate</a><span class="local"><i></i> Running on your computer</span></header>
+<main>
+  <section class="intro"><span class="eyebrow">HABITAT EXPLORER</span><h1>Find where wildlife can thrive.</h1><p>Choose an animal. Explore a landscape. See what the habitat reveals.</p></section>
+  <div class="workspace">
+    <aside class="panel controls">
+      <div class="section-title"><span class="step">01</span><h2>Your exploration</h2></div>
+      <form id="analysis-form">
+        <fieldset id="inputs" disabled>
+          <label for="region">State</label><select id="region"></select>
+          <label for="species">Species</label><select id="species"></select>
+          <p id="species-note" class="hint">Loading local models…</p>
+          <div class="line"></div>
+          <label>Analysis type</label>
+          <div class="segmented" role="group" aria-label="Analysis type">
+            <button type="button" id="point-mode" aria-pressed="false">Single point</button>
+            <button type="button" id="area-mode" aria-pressed="true">Surrounding area</button>
+          </div>
+          <div id="radius-field"><label for="radius">Radius</label><select id="radius"><option value="10">10 km</option><option value="25" selected>25 km</option><option value="50">50 km</option></select><p class="hint">81 sample points across the surrounding landscape.</p></div>
+          <div class="line"></div>
+          <label>Center location</label><p id="selected-location" class="coordinates"></p><p class="hint">Click the map to move your center.</p>
+          <details class="manual"><summary>Enter coordinates</summary><div class="coordinate-inputs"><div><label for="latitude">Latitude</label><input id="latitude" type="number" step="any" min="-90" max="90" value="42.3718" required></div><div><label for="longitude">Longitude</label><input id="longitude" type="number" step="any" min="-180" max="180" value="-72.2820" required></div></div></details>
+        </fieldset>
+        <button id="analyze" class="primary" disabled>Analyze habitat <span aria-hidden="true">↗</span></button>
+      </form>
+      <button type="button" id="cancel" class="secondary" hidden>Cancel analysis</button>
+      <p id="status" class="status" role="status" aria-live="polite">Connecting to local models…</p>
+      <p id="error" class="error" role="alert" hidden></p>
+      <div class="scope-note">Local browser preview · bundled models<br>Training and custom models are available in the desktop app.</div>
+    </aside>
+    <section class="panel landscape" aria-label="Habitat map and results">
+      <div class="map-top"><span class="eyebrow">THE LANDSCAPE</span><button id="reset-map" type="button" class="text-button">Show state ↗</button></div>
+      <div id="map" role="region" aria-label="Interactive habitat map"></div>
+      <p id="map-status" class="map-status" role="status" hidden></p>
+      <div class="results">
+        <div id="empty"><span class="eyebrow">A CLOSER LOOK</span><h2>Your next discovery starts here.</h2><p>Choose your species and location, then analyze the habitat.<br>Individual sample scores will appear on the map.</p></div>
+        <div id="result" hidden>
+          <div class="result-title"><div><span class="eyebrow" id="result-kind"></span><h2 id="result-title"></h2></div><button id="export" type="button" class="text-button">Export JSON ↓</button></div>
+          <div id="metrics" class="metrics"></div>
+          <p id="result-note" class="hint"></p>
+          <div id="legend" class="legend" aria-label="Suitability categories"><span><i class="very-low"></i>Very low</span><span><i class="low"></i>Low</span><span><i class="moderate"></i>Moderate</span><span><i class="high"></i>High</span><span><i class="very-high"></i>Very high</span><span><i class="unavailable"></i>No data</span></div>
+          <details id="scores"><summary>View all scores</summary><div class="table-scroll"><table><caption class="sr-only">Individual habitat assessment results</caption><thead><tr><th>Location</th><th>Score</th><th>Percentile</th><th>Suitability</th></tr></thead><tbody id="score-rows"></tbody></table></div></details>
+          <details id="conditions" hidden><summary>Environmental conditions</summary><dl id="feature-values"></dl></details>
+          <p class="disclaimer">Suitability is relative, not a probability that an animal is present. Regional results sample a grid, not continuous habitat coverage.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+  <footer><span>Wild-Locate</span><span>Species observations + environmental data</span></footer>
+</main>
+</body>
+</html>

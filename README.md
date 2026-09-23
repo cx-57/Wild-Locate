@@ -133,3 +133,26 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+## Local browser app
+
+With the project environment activated, run:
+
+```bash
+wildlocate web
+```
+
+This opens **http://127.0.0.1:8765** in your browser. Keep the terminal running;
+press **Ctrl+C** to stop the server and any active analysis. To choose another
+port or skip automatically opening the browser, use
+`wildlocate web --port 8766 --no-browser`.
+
+Choose a bundled species, click the map or enter coordinates, and run a point
+analysis or an area analysis with a 10/25/50 km radius. The browser uses your
+existing local datasets and models. Map tiles require internet access; manual
+coordinates and local scoring still work without them. The score table is
+collapsible and results can be exported as JSON. Cancel stops the worker process.
+
+This first browser version supports bundled models. Account management, custom
+models, and training remain in the desktop app (`wildlocate`). The web server is
+local to this computer; it is not a hosted public website.
