@@ -23,6 +23,7 @@ from wildlocate.core.registry import (
     list_models,
 )
 from wildlocate.core.regional import REGIONS, get_region
+from wildlocate.core.observations import species_suggestions
 from wildlocate.core.registry import cleanup_job
 
 ROOT = Path(__file__).resolve().parent
@@ -490,7 +491,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
@@ -710,6 +711,24 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Choose a custom model to delete.")
                 delete_model(payload["id"], username=username)
                 self.reply(200, {"ok": True})
+                return
+
+            if path == "/api/species/suggestions":
+                if set(payload) != {"region", "query"}:
+                    raise ValueError("Choose a state and enter a species search.")
+                region = get_region(payload["region"])
+                query = payload["query"]
+                if not isinstance(query, str) or not query.strip() or len(query.strip()) > 100:
+                    raise ValueError("Enter a species search up to 100 characters.")
+                suggestions = species_suggestions(query.strip(), region.name, limit=3)
+                self.reply(
+                    200,
+                    {
+                        "region": region.code,
+                        "region_name": region.name,
+                        "suggestions": suggestions,
+                    },
+                )
                 return
 
             if path == "/api/training/start":
