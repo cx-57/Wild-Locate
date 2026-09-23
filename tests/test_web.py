@@ -57,6 +57,9 @@ class JobTests(unittest.TestCase):
 class ServerTests(unittest.TestCase):
     def setUp(self):
         self.server = create_server(0)
+        # Most server tests exercise the signed-in application. Authentication
+        # itself is covered separately without touching a real local account DB.
+        self.server.username = 'testuser'
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.addCleanup(self.stop)
@@ -83,8 +86,27 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         config = json.loads(data)
         ma = next(r for r in config['regions'] if r['code'] == 'MA')
+        self.assertTrue(config['authenticated'])
+        self.assertEqual(config['username'], 'testuser')
         self.assertIn('Bobcat', ma['species'])
         self.assertEqual(config['token'], self.server.token)
+
+    def test_login_logout_and_auth_gate(self):
+        self.server.username = None
+        self.assertEqual(self.request('POST', '/api/jobs', PAYLOAD)[0], 401)
+        with patch('wildlocate.web.server.authenticate', return_value='alice') as authenticate:
+            status, data = self.request(
+                'POST', '/api/auth/login',
+                {'username': 'Alice', 'password': 'password1', 'create': False},
+            )
+        self.assertEqual(status, 200)
+        authenticate.assert_called_once_with('Alice', 'password1', create=False)
+        config = json.loads(data)
+        self.assertTrue(config['authenticated'])
+        self.assertEqual(config['username'], 'alice')
+        status, data = self.request('POST', '/api/auth/logout', {})
+        self.assertEqual(status, 200)
+        self.assertFalse(json.loads(data)['authenticated'])
 
     def test_forbidden_requests_and_paths(self):
         self.assertEqual(self.request('POST', '/api/jobs', PAYLOAD, {'X-Wildlocate-Token': ''})[0], 403)
