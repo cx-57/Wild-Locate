@@ -359,7 +359,7 @@ def select_spatial_splits(df, feature_columns, y):
             continue
 
         notes = [
-            f"Used spatial 10 km x 10 km blocks for cross-validation." if block_size_m == DEFAULT_BLOCK_SIZE_M else f"Used spatial {block_size_m}m blocks because the default 10 km grid produced invalid folds."
+            "Used spatial 10 km x 10 km blocks for cross-validation." if block_size_m == DEFAULT_BLOCK_SIZE_M else f"Used spatial {block_size_m}m blocks because the default 10 km grid produced invalid folds."
         ]
         return groups, splits, block_size_m, notes
 
