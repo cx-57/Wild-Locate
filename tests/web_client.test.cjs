@@ -19,6 +19,7 @@ async function browser() {
       },
       click(){return this.handlers.click?.();},
       focus(){},
+      scrollIntoView(){},
       showModal(){this.open=true;},
       close(){this.open=false;},
     };
@@ -39,7 +40,7 @@ async function browser() {
       querySelector:()=>element(),
       body:element(),
     },
-    window:{confirm:()=>true},
+    window:{confirm:()=>true,scrollTo(){}},
     console, Date, Number, Object, String, Math, JSON, Error,
     encodeURIComponent,
     Option:function(name,value){this.value=value;this.textContent=name;},
