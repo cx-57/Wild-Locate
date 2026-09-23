@@ -1,14 +1,30 @@
 """Feature-dataset construction, model training, and training sessions."""
 
 from datetime import datetime, timezone
-import argparse
+import json
+import os
 from pathlib import Path
+import shutil
+import uuid
 
+import joblib
+import numpy as np
 import pandas as pd
+from pyproj import Transformer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 from wildlocate.core.environment import extract_features
 from wildlocate.core.observations import species_slug
-
+from wildlocate.core.registry import (
+    ModelRecord, atomic_json, cleanup_job, complete, custom_root, job_path,
+    normalize_username,
+)
 DEFAULT_INPUT_DIR = Path("data/processed/samples")
 DEFAULT_OUTPUT_DIR = Path("data/processed/features/species")
 DEFAULT_FAILURE_THRESHOLD = 0.05
@@ -152,23 +168,8 @@ def build_species_dataset(
 
     return output_df, pd.DataFrame(failed_rows)
 
-import argparse
-import json
-from pathlib import Path
 
-import joblib
-import numpy as np
-import pandas as pd
-from pyproj import Transformer
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import average_precision_score, roc_auc_score
-from sklearn.model_selection import StratifiedGroupKFold
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 
-from wildlocate.core.observations import species_slug
 
 OUTPUT_DIR = Path("data/processed/models")
 TARGET_COLUMN = "presence"
@@ -617,14 +618,7 @@ def train_species(species, dataset_file=None, output_dir=OUTPUT_DIR, progress=No
 
 # Training session orchestration
 
-import os
-import shutil
-import uuid
 
-from wildlocate.core.registry import normalize_username
-from wildlocate.core.registry import (
-    ModelRecord, atomic_json, cleanup_job, complete, custom_root, job_path,
-)
 
 MIN_OBSERVATIONS = 25
 SUPPORTED_TARGET_GROUPS = {"Mammalia": "mammal", "Reptilia": "reptile"}
