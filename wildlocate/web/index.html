@@ -10,54 +10,220 @@
   <script defer src="/app.js"></script>
 </head>
 <body>
-<header><a class="brand" href="/" aria-label="Wild-Locate home"><span class="mark" aria-hidden="true">↗</span> Wild-Locate</a><span class="local"><i></i> Running on your computer</span></header>
+<section id="auth-screen" class="auth-shell" hidden>
+  <div class="auth-card">
+    <div class="brand-row"><span class="mark" aria-hidden="true">↗</span><span class="brand-text">Wild-Locate</span></div>
+    <div>
+      <span class="eyebrow">LOCAL ACCOUNT</span>
+      <h1 id="auth-title">Welcome back.</h1>
+      <p id="auth-copy">Sign in to explore habitat and access the species models saved to your account.</p>
+    </div>
+    <form id="auth-form">
+      <label for="auth-username">Username</label>
+      <input id="auth-username" autocomplete="username" maxlength="40" required>
+      <label for="auth-password">Password</label>
+      <input id="auth-password" type="password" autocomplete="current-password" maxlength="256" required>
+      <div id="confirm-wrap" hidden>
+        <label for="auth-confirm">Confirm password</label>
+        <input id="auth-confirm" type="password" autocomplete="new-password" maxlength="256">
+      </div>
+      <p id="auth-error" class="error" role="alert" hidden></p>
+      <button class="primary" id="auth-submit" type="submit">Sign in <span>→</span></button>
+      <button class="text-button auth-switch" id="auth-switch" type="button">New here? Create an account</button>
+    </form>
+    <p class="auth-note">Accounts stay on this computer. Models you train belong to your account. Bundled models and habitat data are shared locally.</p>
+  </div>
+</section>
+
+<div id="app-shell" hidden>
+<header>
+  <a class="brand" href="/" aria-label="Wild-Locate home"><span class="mark" aria-hidden="true">↗</span> Wild-Locate</a>
+  <nav class="top-actions" aria-label="Account">
+    <span id="account-name" class="account-name"></span>
+    <button id="manage-species" type="button" class="secondary compact">Manage species</button>
+    <button id="sign-out" type="button" class="text-button">Sign out</button>
+  </nav>
+</header>
+
 <main>
-  <section class="intro"><span class="eyebrow">HABITAT EXPLORER</span><h1>Find where wildlife can thrive.</h1><p>Choose an animal. Explore a landscape. See what the habitat reveals.</p></section>
+  <section class="intro">
+    <span class="eyebrow">HABITAT EXPLORER</span>
+    <h1>Find where wildlife can thrive.</h1>
+    <p>Choose an animal. Explore a landscape. See what the habitat reveals.</p>
+  </section>
+
   <div class="workspace">
     <aside class="panel controls">
       <div class="section-title"><span class="step">01</span><h2>Your exploration</h2></div>
       <form id="analysis-form">
         <fieldset id="inputs" disabled>
-          <label for="region">State</label><select id="region"></select>
-          <label for="species">Species</label><select id="species"></select>
+          <label for="region">State</label>
+          <select id="region"></select>
+          <label for="species">Species</label>
+          <select id="species"></select>
           <p id="species-note" class="hint">Loading local models…</p>
+
           <div class="line"></div>
           <label>Analysis type</label>
           <div class="segmented" role="group" aria-label="Analysis type">
             <button type="button" id="point-mode" aria-pressed="false">Single point</button>
             <button type="button" id="area-mode" aria-pressed="true">Surrounding area</button>
           </div>
-          <div id="radius-field"><label for="radius">Radius</label><select id="radius"><option value="10">10 km</option><option value="25" selected>25 km</option><option value="50">50 km</option></select><p class="hint">81 sample points across the surrounding landscape.</p></div>
+
+          <div id="radius-field">
+            <label for="radius">Radius</label>
+            <select id="radius">
+              <option value="10">10 km</option>
+              <option value="25" selected>25 km</option>
+              <option value="50">50 km</option>
+            </select>
+            <p class="hint">81 sample points across the surrounding landscape.</p>
+          </div>
+
           <div class="line"></div>
-          <label>Center location</label><p id="selected-location" class="coordinates"></p><p class="hint">Click the map to move your center.</p>
-          <details class="manual"><summary>Enter coordinates</summary><div class="coordinate-inputs"><div><label for="latitude">Latitude</label><input id="latitude" type="number" step="any" min="-90" max="90" value="42.3718" required></div><div><label for="longitude">Longitude</label><input id="longitude" type="number" step="any" min="-180" max="180" value="-72.2820" required></div></div></details>
+          <label>Center location</label>
+          <p id="selected-location" class="coordinates"></p>
+          <p class="hint">Click the map to move your center.</p>
+
+          <details class="manual">
+            <summary>Enter coordinates</summary>
+            <div class="coordinate-inputs">
+              <div><label for="latitude">Latitude</label><input id="latitude" type="number" step="any" min="-90" max="90" value="42.3718" required></div>
+              <div><label for="longitude">Longitude</label><input id="longitude" type="number" step="any" min="-180" max="180" value="-72.2820" required></div>
+            </div>
+          </details>
         </fieldset>
         <button id="analyze" class="primary" disabled>Analyze habitat <span aria-hidden="true">↗</span></button>
       </form>
       <button type="button" id="cancel" class="secondary" hidden>Cancel analysis</button>
       <p id="status" class="status" role="status" aria-live="polite">Connecting to local models…</p>
       <p id="error" class="error" role="alert" hidden></p>
-      <div class="scope-note">Local browser preview · bundled models<br>Training and custom models are available in the desktop app.</div>
+      <div class="scope-note">Analysis and trained models stay on this computer.</div>
     </aside>
+
     <section class="panel landscape" aria-label="Habitat map and results">
       <div class="map-top"><span class="eyebrow">THE LANDSCAPE</span><button id="reset-map" type="button" class="text-button">Show state ↗</button></div>
       <div id="map" role="region" aria-label="Interactive habitat map"></div>
       <p id="map-status" class="map-status" role="status" hidden></p>
+
       <div class="results">
-        <div id="empty"><span class="eyebrow">A CLOSER LOOK</span><h2>Your next discovery starts here.</h2><p>Choose your species and location, then analyze the habitat.<br>Individual sample scores will appear on the map.</p></div>
+        <div id="empty">
+          <span class="eyebrow">A CLOSER LOOK</span>
+          <h2>Your next discovery starts here.</h2>
+          <p>Choose your species and location, then analyze the habitat.<br>Individual sample scores will appear on the map.</p>
+        </div>
+
         <div id="result" hidden>
-          <div class="result-title"><div><span class="eyebrow" id="result-kind"></span><h2 id="result-title"></h2></div><button id="export" type="button" class="text-button">Export JSON ↓</button></div>
+          <div class="result-title">
+            <div><span class="eyebrow" id="result-kind"></span><h2 id="result-title"></h2></div>
+            <button id="export" type="button" class="text-button">Export JSON ↓</button>
+          </div>
           <div id="metrics" class="metrics"></div>
           <p id="result-note" class="hint"></p>
-          <div id="legend" class="legend" aria-label="Suitability categories"><span><i class="very-low"></i>Very low</span><span><i class="low"></i>Low</span><span><i class="moderate"></i>Moderate</span><span><i class="high"></i>High</span><span><i class="very-high"></i>Very high</span><span><i class="unavailable"></i>No data</span></div>
-          <details id="scores"><summary>View all scores</summary><div class="table-scroll"><table><caption class="sr-only">Individual habitat assessment results</caption><thead><tr><th>Location</th><th>Score</th><th>Percentile</th><th>Suitability</th></tr></thead><tbody id="score-rows"></tbody></table></div></details>
+          <div id="legend" class="legend" aria-label="Suitability categories">
+            <span><i class="very-low"></i>Very low</span><span><i class="low"></i>Low</span>
+            <span><i class="moderate"></i>Moderate</span><span><i class="high"></i>High</span>
+            <span><i class="very-high"></i>Very high</span><span><i class="unavailable"></i>No data</span>
+          </div>
+          <details id="scores">
+            <summary>View all scores</summary>
+            <div class="table-scroll">
+              <table>
+                <caption class="sr-only">Individual habitat assessment results</caption>
+                <thead><tr><th>Location</th><th>Score</th><th>Percentile</th><th>Suitability</th></tr></thead>
+                <tbody id="score-rows"></tbody>
+              </table>
+            </div>
+          </details>
           <details id="conditions" hidden><summary>Environmental conditions</summary><dl id="feature-values"></dl></details>
           <p class="disclaimer">Suitability is relative, not a probability that an animal is present. Regional results sample a grid, not continuous habitat coverage.</p>
         </div>
       </div>
     </section>
   </div>
+
   <footer><span>Wild-Locate</span><span>Species observations + environmental data</span></footer>
 </main>
+</div>
+
+<dialog id="species-dialog" class="species-dialog">
+  <div class="dialog-shell">
+    <div class="dialog-head">
+      <div>
+        <span class="eyebrow">MODEL WORKSPACE</span>
+        <h2>Manage species</h2>
+        <p id="manager-subtitle" class="hint"></p>
+      </div>
+      <button id="close-manager" type="button" class="icon-button" aria-label="Close">×</button>
+    </div>
+
+    <div class="manager-tabs" role="tablist" aria-label="Species manager">
+      <button id="models-tab" type="button" role="tab" aria-selected="true">Your models</button>
+      <button id="train-tab" type="button" role="tab" aria-selected="false">Train a new species</button>
+    </div>
+
+    <section id="models-panel" class="manager-panel" role="tabpanel">
+      <div class="model-grid">
+        <div>
+          <p class="manager-copy">Bundled models are ready to use. Models you train stay under your account until you enable them.</p>
+          <div id="model-list" class="model-list" aria-label="Saved species models"></div>
+        </div>
+        <div id="model-review" class="model-review">
+          <span class="eyebrow">MODEL REVIEW</span>
+          <h3 id="review-species">Select a model</h3>
+          <div id="review-details" class="review-details"><p class="hint">Choose a model to inspect its validation summary.</p></div>
+          <p id="model-message" class="notice" hidden></p>
+          <div class="model-actions">
+            <button id="enable-model" type="button" class="primary">Enable model</button>
+            <button id="retrain-model" type="button" class="secondary">Retrain species</button>
+            <button id="delete-model" type="button" class="danger">Delete custom model</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="train-panel" class="manager-panel" role="tabpanel" hidden>
+      <div class="training-flow">
+        <div class="training-step">
+          <span class="step">01</span>
+          <div>
+            <h3>Find a mammal</h3>
+            <p class="hint">Enter a common or scientific name. Wild-Locate resolves it through iNaturalist.</p>
+            <form id="training-form" class="inline-form">
+              <input id="training-query" maxlength="100" placeholder="e.g. American Black Bear" required>
+              <button id="find-species" class="secondary" type="submit">Find species</button>
+            </form>
+            <div id="training-match" class="match-card" hidden></div>
+          </div>
+        </div>
+
+        <div class="training-step">
+          <span class="step">02</span>
+          <div>
+            <h3>Check data and train</h3>
+            <p id="training-summary" class="hint">Training needs at least 25 cleaned observations and uses spatial cross-validation.</p>
+            <div class="training-actions">
+              <button id="prepare-training" class="secondary" type="button" hidden>Confirm species and check data</button>
+              <button id="download-environment" class="secondary" type="button" hidden>Download environmental data</button>
+              <button id="start-training" class="primary" type="button" hidden>Start training</button>
+              <button id="cancel-training" class="danger" type="button" hidden>Cancel operation</button>
+            </div>
+            <p id="training-status" class="status left" role="status">Choose a species to begin.</p>
+            <p id="training-error" class="error" hidden></p>
+            <details id="training-log" hidden><summary>Training details</summary><pre id="training-log-text"></pre></details>
+          </div>
+        </div>
+
+        <div class="training-step">
+          <span class="step">03</span>
+          <div>
+            <h3>Review before enabling</h3>
+            <p class="hint">Completed models are saved under Your models. Review validation metrics, then enable the model when ready.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</dialog>
 </body>
 </html>
