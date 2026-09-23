@@ -3,7 +3,6 @@
 import argparse
 import os
 import math
-import sys
 import uuid
 from pathlib import Path
 
