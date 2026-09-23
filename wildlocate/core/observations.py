@@ -1,11 +1,12 @@
 """iNaturalist observations and target-group background sampling."""
 
-import argparse
 import re
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import requests
+from pyproj import Transformer
 
 API_BASE = "https://api.inaturalist.org/v1"
 DEFAULT_MAX_OBSERVATIONS = 5000
@@ -247,54 +248,6 @@ def save_cleaned_observations(df, species_name, output_dir="data/processed/sampl
     df.to_csv(output_path, index=False)
     return output_path
 
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Resolve a species, download Massachusetts iNaturalist observations, and save cleaned occurrences.",
-    )
-    parser.add_argument("--species", required=True, help="Species to retrieve, e.g. 'Bobcat'.")
-    parser.add_argument(
-        "--place-name",
-        default="Massachusetts",
-        help="Place name to search within. Default: Massachusetts.",
-    )
-    parser.add_argument(
-        "--max-observations",
-        type=int,
-        default=DEFAULT_MAX_OBSERVATIONS,
-        help="Maximum number of raw observations to retrieve before cleaning. Default: 5000.",
-    )
-    args = parser.parse_args()
-
-    try:
-        species = resolve_species(args.species)
-        print(
-            f"Resolved species: {species['common_name']} ({species['scientific_name']})"
-        )
-
-        raw_df = download_species_observations(
-            args.species,
-            place_name=args.place_name,
-            max_observations=args.max_observations,
-        )
-        print(f"Raw observation count: {len(raw_df)}")
-
-        cleaned_df = clean_species_observations(raw_df)
-        print(f"Cleaned observation count: {len(cleaned_df)}")
-
-        output_path = save_cleaned_observations(cleaned_df, args.species)
-        print(f"Saved cleaned observations to: {output_path}")
-
-    except Exception as exc:
-        raise SystemExit(f"Error: {exc}") from exc
-
-
-import argparse
-from pathlib import Path
-
-import numpy as np
-import pandas as pd
-from pyproj import Transformer
 
 MAMMAL_POOL_FILE = Path("data/processed/samples/massachusetts_mammal_pool.csv")
 DEFAULT_MAX_MAMMAL_POOL = 20000
