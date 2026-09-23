@@ -568,19 +568,3 @@ def extract_features(latitude, longitude):
             raise ValueError(f"{key} must be non-negative, received {value}.")
 
     return {key: features[key] for key in FEATURE_ORDER}
-
-
-def print_feature_dict(features):
-    print("Features:")
-    for key in FEATURE_ORDER:
-        print(f"  {key}: {features[key]}")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Extract environmental features at a latitude/longitude point.")
-    parser.add_argument("--lat", type=float, required=True, help="Latitude in EPSG:4326.")
-    parser.add_argument("--lon", type=float, required=True, help="Longitude in EPSG:4326.")
-    args = parser.parse_args()
-
-    features = extract_features(args.lat, args.lon)
-    print_feature_dict(features)
