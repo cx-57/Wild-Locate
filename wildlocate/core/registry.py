@@ -16,6 +16,8 @@ import wildlocate
 
 from wildlocate.core.environment import get_user_data_dir
 from wildlocate.core.regional import get_region
+
+
 def connect():
     folder = get_user_data_dir() / 'accounts'
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -73,7 +75,7 @@ def authenticate(username, password, create=False):
 
 
 
-BUNDLED_DATA = Path(wildlocate.__file__).resolve().parent / "data" / "processed"
+BUNDLED_DATA = Path(wildlocate.__file__).resolve().parent / "bundled"
 
 
 @dataclass(frozen=True)
@@ -163,7 +165,7 @@ def custom_record(identifier, *, username=None):
 def list_models(region="MA", *, username=None):
     region = get_region(region).code
     records = []
-    for metrics_path in sorted((BUNDLED_DATA / "models").glob("*_metrics.json")):
+    for metrics_path in sorted(BUNDLED_DATA.glob("*_metrics.json")):
         try:
             metadata = json.loads(metrics_path.read_text(encoding="utf-8"))
             name = metadata["species"]
@@ -173,9 +175,9 @@ def list_models(region="MA", *, username=None):
             record = ModelRecord(
                 f"bundled:{slug}",
                 name,
-                BUNDLED_DATA / "models" / f"{slug}.joblib",
+                BUNDLED_DATA / f"{slug}.joblib",
                 metrics_path,
-                BUNDLED_DATA / "features" / "species" / f"{slug}_features.csv",
+                BUNDLED_DATA / f"{slug}_features.csv",
             )
             if complete(record):
                 records.append(record)
