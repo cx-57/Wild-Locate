@@ -95,6 +95,125 @@ def load_or_create_mammal_pool(refresh_pool=False, pool_file=None, progress=None
     return pool_df
 
 
+TARGET_GROUPS = {
+    "Mammalia": {"taxon_id": 40151, "label": "mammal"},
+    "Reptilia": {"taxon_id": 26036, "label": "reptile"},
+}
+
+
+def target_group_label(target_group):
+    try:
+        return TARGET_GROUPS[target_group]["label"]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported target group: {target_group}") from exc
+
+
+def download_target_group_pool(target_group, place_name="Massachusetts", progress=None):
+    if target_group == "Mammalia":
+        return download_mammal_pool(place_name=place_name, progress=progress)
+
+    group = TARGET_GROUPS.get(target_group)
+    if group is None:
+        raise ValueError(f"Unsupported target group: {target_group}")
+
+    place_id = find_place_id(place_name)
+    rows = []
+    id_above = 0
+    total_rows = 0
+
+    while total_rows < DEFAULT_MAX_MAMMAL_POOL:
+        params = {
+            "taxon_id": group["taxon_id"],
+            "place_id": place_id,
+            "quality_grade": "research",
+            "verifiable": "true",
+            "captive": "false",
+            "per_page": 200,
+            "order_by": "id",
+            "order": "asc",
+            "id_above": id_above,
+        }
+        data = api_get("/observations", params)
+        batch = data.get("results", [])
+        if not batch:
+            break
+
+        for obs in batch:
+            row = extract_observation_row(obs)
+            if row is None:
+                continue
+            rows.append({
+                key: row[key]
+                for key in (
+                    "observation_id", "taxon_id", "taxon_name", "common_name",
+                    "latitude", "longitude", "positional_accuracy", "observed_on",
+                    "coordinates_obscured",
+                )
+            })
+            total_rows += 1
+            if total_rows >= DEFAULT_MAX_MAMMAL_POOL:
+                break
+
+        if len(batch) < params["per_page"]:
+            break
+
+        id_above = batch[-1]["id"]
+        if progress:
+            progress(f"Downloaded {total_rows:,} {place_name} {group['label']} background observations…")
+
+    if not rows:
+        raise RuntimeError(
+            f"No usable {place_name} {group['label']} observations were found."
+        )
+
+    df = pd.DataFrame(rows)
+    df["observation_id"] = pd.to_numeric(df["observation_id"], errors="coerce")
+    df["taxon_id"] = pd.to_numeric(df["taxon_id"], errors="coerce")
+    df["positional_accuracy"] = pd.to_numeric(df["positional_accuracy"], errors="coerce")
+    return df
+
+
+def load_or_create_target_group_pool(
+    target_group, refresh_pool=False, pool_file=None, progress=None, place_name="Massachusetts"
+):
+    if target_group == "Mammalia":
+        return load_or_create_mammal_pool(
+            refresh_pool=refresh_pool,
+            pool_file=pool_file,
+            progress=progress,
+            place_name=place_name,
+        )
+
+    label = target_group_label(target_group)
+    pool_file = Path(pool_file) if pool_file is not None else Path(
+        f"data/processed/samples/massachusetts_{label}_pool.csv"
+    )
+    if pool_file.exists() and not refresh_pool:
+        pool_df = pd.read_csv(pool_file)
+        required_columns = {
+            "observation_id", "taxon_id", "taxon_name", "common_name",
+            "latitude", "longitude", "positional_accuracy", "observed_on",
+            "coordinates_obscured",
+        }
+        missing = required_columns.difference(pool_df.columns)
+        if missing:
+            raise ValueError(
+                f"Existing {label} pool at {pool_file} is missing required columns: {sorted(missing)}"
+            )
+        return pool_df
+
+    pool_df = download_target_group_pool(
+        target_group, place_name=place_name, progress=progress
+    )
+    pool_file.parent.mkdir(parents=True, exist_ok=True)
+    pool_df.to_csv(pool_file, index=False)
+    return pool_df
+
+
+def filter_target_group_pool(pool_df, target_taxon_id):
+    return filter_mammal_pool(pool_df, target_taxon_id)
+
+
 def project_to_5070(df):
     transformer = Transformer.from_crs("EPSG:4326", "EPSG:5070", always_xy=True)
     x_5070, y_5070 = transformer.transform(df["longitude"].to_numpy(), df["latitude"].to_numpy())
@@ -176,7 +295,8 @@ def generate_background(
     exclusion_distance_m=1000,
     thinning_distance_m=500,
     random_state=42,
-    *, samples_dir="data/processed/samples", pool_file=None, taxon_id=None, progress=None, place_name="Massachusetts",
+    *, samples_dir="data/processed/samples", pool_file=None, taxon_id=None, progress=None,
+    place_name="Massachusetts", target_group=None,
 ):
     if background_ratio <= 0:
         raise ValueError("background_ratio must be greater than 0.")
@@ -185,7 +305,12 @@ def generate_background(
     if thinning_distance_m <= 0:
         raise ValueError("thinning_distance_m must be greater than 0.")
 
-    target_taxon_id = int(taxon_id if taxon_id is not None else resolve_species(species_name)["taxon_id"])
+    resolved = None
+    if taxon_id is None or target_group is None:
+        resolved = resolve_species(species_name)
+    target_taxon_id = int(taxon_id if taxon_id is not None else resolved["taxon_id"])
+    target_group = target_group or resolved["iconic_taxon_name"]
+    group_label = target_group_label(target_group)
 
     species_slug_value = species_slug(species_name)
     samples_dir = Path(samples_dir)
@@ -204,12 +329,14 @@ def generate_background(
     if presence_df.empty:
         raise RuntimeError(f"No usable presence points found in {presence_file}.")
 
-    pool_df = load_or_create_mammal_pool(pool_file=pool_file, progress=progress, place_name=place_name)
-    candidate_df = filter_mammal_pool(pool_df, target_taxon_id)
+    pool_df = load_or_create_target_group_pool(
+        target_group, pool_file=pool_file, progress=progress, place_name=place_name
+    )
+    candidate_df = filter_target_group_pool(pool_df, target_taxon_id)
 
     if candidate_df.empty:
         raise RuntimeError(
-            f"No usable mammal-pool candidates remain after quality filtering for {species_name}."
+            f"No usable {group_label}-pool candidates remain after quality filtering for {species_name}."
         )
 
     projected_presence = project_to_5070(presence_df)
