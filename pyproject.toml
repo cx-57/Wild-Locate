@@ -29,17 +29,14 @@ wildlocate = "wildlocate.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["wildlocate*"]
-namespaces = true
+namespaces = false
 
 [tool.setuptools.package-data]
 "wildlocate" = [
-    "core/data/state_boundaries.geojson",
-    "gui/map/index.html",
-    "web/*.html",
-    "web/*.css",
-    "web/*.js",
-    "gui/map/vendor/*",
     "data/processed/models/*.joblib",
     "data/processed/models/*.json",
     "data/processed/features/species/*.csv",
 ]
+"wildlocate.core.data" = ["state_boundaries.geojson"]
+"wildlocate.gui" = ["map/index.html", "map/vendor/*"]
+"wildlocate.web" = ["*.html", "*.css", "*.js"]
