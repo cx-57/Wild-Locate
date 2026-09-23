@@ -94,6 +94,39 @@ fieldset>label:first-child{margin-top:0}
 .metrics{display:flex;flex-wrap:wrap;gap:27px;margin:21px 0 12px}
 .metric strong{display:block;font-size:23px;font-weight:500;letter-spacing:-.7px}
 .metric span{display:block;font-size:10px;color:var(--muted);margin-top:4px}
+
+.percentile-card{
+  margin:18px 0 16px;padding:18px 18px 16px;border:1px solid var(--line);
+  border-radius:12px;background:#fafbf8
+}
+.percentile-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;margin-bottom:15px}
+.percentile-heading strong{display:block;font-size:25px;font-weight:520;letter-spacing:-.7px;margin-top:6px}
+.percentile-category{
+  font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--green);background:#edf3e9;border-radius:999px;padding:6px 9px;white-space:nowrap
+}
+.percentile-track{
+  position:relative;height:12px;border-radius:999px;
+  background:linear-gradient(
+    to right,
+    var(--red) 0%, var(--red) 20%,
+    var(--orange) 20%, var(--orange) 40%,
+    var(--yellow) 40%, var(--yellow) 60%,
+    var(--lightgreen) 60%, var(--lightgreen) 80%,
+    var(--darkgreen) 80%, var(--darkgreen) 100%
+  );
+  box-shadow:inset 0 0 0 1px #ffffff80
+}
+.percentile-marker{
+  position:absolute;top:50%;width:4px;height:24px;border-radius:3px;background:#173a2b;
+  transform:translate(-50%,-50%);box-shadow:0 0 0 3px #fff,0 1px 5px #0002
+}
+.percentile-scale{
+  display:flex;justify-content:space-between;margin-top:7px;color:#899486;
+  font-size:9px;font-variant-numeric:tabular-nums
+}
+.percentile-copy{margin:12px 0 0;color:var(--muted);font-size:11px;line-height:1.55}
+
 .legend{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0;font-size:10px;color:var(--muted)}
 .legend span{display:flex;align-items:center;gap:5px}
 .legend i{width:6px;height:6px;border-radius:50%;display:inline-block}
