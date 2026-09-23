@@ -38,7 +38,7 @@ def run_prediction(account=None):
 def run_training(job_id, region, account):
     from requests.exceptions import RequestException
     from wildlocate.core.registry import cleanup_job
-    from wildlocate.core.training import TrainingSession
+    from wildlocate.core.modeling import TrainingSession
 
     output = sys.stdout
 
