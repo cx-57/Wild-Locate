@@ -149,7 +149,7 @@ test('Partial species search renders state-valid suggestions before training',as
     if(path==='/api/species/suggestions') return response(suggestions);
     if(path==='/api/training/start') {
       const body=JSON.parse(options.body);
-      assert.equal(body.query,'Alligator mississippiensis');
+      assert.equal(body.query,'American Alligator');
       return response({
         id:'training-1',
         status:'resolved',
