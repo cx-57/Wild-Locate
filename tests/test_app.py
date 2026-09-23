@@ -133,7 +133,7 @@ class AreaUITests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication(['test'])
 
     def setUp(self):
-        self.enterContext(patch('wildlocate.gui.location_map.QWebEngineView', None))
+        self.enterContext(patch('wildlocate.gui.app.QWebEngineView', None))
         self.enterContext(patch('wildlocate.gui.app.available_species', return_value=['Bobcat']))
         self.window = MainWindow()
         self.addCleanup(self.window.close)
