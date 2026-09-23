@@ -1,15 +1,33 @@
 """Wild-Locate desktop interface."""
 
+import json
 import math
+from pathlib import Path
+import sys
+import time
 
-from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
+from PyQt6.QtCore import (
+    QIODevice, QObject, QPointF, QProcess, QRectF, QSaveFile, QSignalBlocker,
+    Qt, QTimer, QUrl, pyqtSignal, pyqtSlot,
+)
+from PyQt6.QtGui import (
+    QColor, QDesktopServices, QFont, QFontDatabase, QIcon, QKeySequence,
+    QPainter, QPainterPath, QPalette, QPen, QPixmap, QShortcut,
+)
 from PyQt6.QtWidgets import (
-    QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton,
-    QStyledItemDelegate, QTabWidget, QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QBoxLayout, QComboBox, QDialog, QFileDialog,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar,
+    QPushButton, QScrollArea, QSizePolicy, QStackedWidget, QStyledItemDelegate,
+    QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
-
+from wildlocate.core.modeling import new_job_id
+from wildlocate.core.registry import (
+    authenticate, available_models, available_species, cleanup_job, delete_model,
+    enable_model, list_models, normalize_username,
+)
+from wildlocate.core.regional import REGIONS, get_region
 # Application palette and stylesheet
 
 def light_palette():
@@ -398,13 +416,7 @@ class InsightsPanel(QWidget):
 
 # -----------------------------------------------------------------------------
 
-import json
-import math
-from pathlib import Path
 
-from PyQt6.QtCore import QObject, QUrl, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
 
 try:
@@ -547,15 +559,8 @@ class LocationMap(QWidget):
 
 # -----------------------------------------------------------------------------
 
-import json
-from pathlib import Path
-import sys
 
-from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
-from wildlocate.core.registry import normalize_username
-from wildlocate.core.registry import cleanup_job
-from wildlocate.core.modeling import new_job_id
 
 
 # Habitat prediction
@@ -746,15 +751,7 @@ class TrainingClient(QObject):
 
 # -----------------------------------------------------------------------------
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (
-    QDialog, QFrame, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem,
-    QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea,
-    QTabWidget, QVBoxLayout, QWidget,
-)
 
-from wildlocate.core.registry import authenticate, normalize_username
-from wildlocate.core.registry import available_models, delete_model, enable_model, list_models
 
 
 # Local account sign-in
@@ -1203,24 +1200,8 @@ class SpeciesManager(QDialog):
 
 # -----------------------------------------------------------------------------
 
-import json
-import math
-from pathlib import Path
-import sys
-import time
 
-from PyQt6.QtCore import QIODevice, QSaveFile, QSignalBlocker, Qt, QTimer
-from PyQt6.QtGui import QFont, QFontDatabase, QKeySequence, QShortcut
-from PyQt6.QtWidgets import (
-    QApplication, QBoxLayout, QFileDialog, QFrame, QGridLayout,
-    QHBoxLayout, QLineEdit, QMainWindow, QProgressBar, QPushButton,
-    QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
-    QTableWidget, QTableWidgetItem, QAbstractItemView,
-)
 
-from wildlocate.core.registry import normalize_username
-from wildlocate.core.registry import available_species
-from wildlocate.core.regional import REGIONS, get_region
 
 
 def button(text, role="", callback=None):
