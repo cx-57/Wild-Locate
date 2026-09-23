@@ -73,7 +73,7 @@ import shutil
 import uuid
 
 import wildlocate
-from wildlocate.core.regions import get_region
+from wildlocate.core.regional import get_region
 
 BUNDLED_DATA = Path(wildlocate.__file__).resolve().parent / "data" / "processed"
 
@@ -232,7 +232,7 @@ def _activation_key(record):
 
 def enable_model(identifier, *, username=None):
     username = normalize_username(username)
-    from wildlocate.core.regions import REGIONS
+    from wildlocate.core.regional import REGIONS
     records = {r.id: r for region in REGIONS for r in list_models(region, username=username)}
     if identifier not in records:
         raise ValueError("This model is incomplete or no longer available.")
