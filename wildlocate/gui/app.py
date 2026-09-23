@@ -861,7 +861,7 @@ class SpeciesManager(QDialog):
     models_changed = pyqtSignal()
 
     def __init__(self, parent=None, region="MA", *, username=None):
-        from wildlocate.core.regions import get_region
+        from wildlocate.core.regional import get_region
         self.region = get_region(region)
         self.username = normalize_username(username)
         super().__init__(parent)
@@ -1220,7 +1220,7 @@ from PyQt6.QtWidgets import (
 
 from wildlocate.core.registry import normalize_username
 from wildlocate.core.registry import available_species
-from wildlocate.core.regions import REGIONS, get_region
+from wildlocate.core.regional import REGIONS, get_region
 
 
 def button(text, role="", callback=None):
