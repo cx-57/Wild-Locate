@@ -334,6 +334,9 @@ def download_target_group_pool(
     group = TARGET_GROUPS.get(target_group)
     if group is None:
         raise ValueError(f"Unsupported target group: {target_group}")
+    if isinstance(max_observations, bool) or not isinstance(max_observations, int) or max_observations <= 0:
+        raise ValueError("max_observations must be a positive integer.")
+    max_observations = min(max_observations, DEFAULT_MAX_BACKGROUND_POOL)
 
     place_id = find_place_id(place_name)
     rows = []
