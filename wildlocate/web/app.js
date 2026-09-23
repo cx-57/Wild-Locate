@@ -961,10 +961,10 @@ function renderTrainingSuggestions(data) {
       `${suggestion.scientific_name} · ${groupName} · ${Number(suggestion.observation_count || 0).toLocaleString()} ${data.region_name || managerRegion} observations`;
 
     button.append(name, meta);
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       $('training-query').value = suggestion.common_name;
       clearTrainingSuggestions();
-      startTrainingResolve(suggestion.scientific_name);
+      await startTrainingResolve(suggestion.scientific_name);
     });
     container.append(button);
   }
