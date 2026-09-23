@@ -207,6 +207,26 @@ def resolve_species(species_name):
     common_name = chosen.get("preferred_common_name") or chosen.get("common_name") or ""
     scientific_name = chosen.get("scientific_name") or chosen.get("name") or ""
 
+    # Autocomplete can return a sparse exact match when queried by scientific
+    # name. Fetch the canonical taxon record before rejecting a suggestion that
+    # was already shown to the user with a valid common name.
+    if not common_name or not scientific_name:
+        detail = api_get(f"/taxa/{int(chosen['id'])}")
+        detailed = (detail.get("results") or [{}])[0]
+        common_name = (
+            common_name
+            or detailed.get("preferred_common_name")
+            or detailed.get("common_name")
+            or ""
+        )
+        scientific_name = (
+            scientific_name
+            or detailed.get("scientific_name")
+            or detailed.get("name")
+            or ""
+        )
+        chosen = {**chosen, **detailed}
+
     if not common_name or not scientific_name:
         raise ValueError(
             f"Could not resolve a usable common and scientific name for '{species_name}'."
