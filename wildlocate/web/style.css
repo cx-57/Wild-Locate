@@ -69,6 +69,8 @@ fieldset>label:first-child{margin-top:0}
 }
 .primary{width:100%;background:var(--green);color:white;display:flex;justify-content:space-between;align-items:center}
 .primary:hover:not(:disabled){background:var(--green-dark)}
+#analyze{width:100%;position:relative;justify-content:center}
+#analyze span{position:absolute;right:14px}
 .secondary{width:100%;margin-top:10px;color:var(--green);background:#edf2e9}
 .secondary.compact{width:auto;margin:0;padding:9px 12px}
 .danger{background:#faecea;color:var(--danger)}
