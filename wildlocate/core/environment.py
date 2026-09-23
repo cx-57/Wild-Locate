@@ -1,11 +1,26 @@
 """Environmental data paths, downloads, and feature extraction."""
 
+
+import math
 import os
+import shutil
+import tempfile
+import uuid
+import zipfile
 from pathlib import Path
 
+import geopandas as gpd
+import numpy as np
+import pandas as pd
 import platformdirs
-
-
+import rasterio
+import requests
+from pyproj import Transformer
+from rasterio.enums import Resampling
+from rasterio.merge import merge
+from rasterio.windows import Window
+from rasterio.warp import calculate_default_transform, reproject
+from shapely.geometry import Point
 def get_user_data_dir() -> Path:
     """Directory where downloaded environmental datasets are stored."""
     override = os.environ.get("WILDLOCATE_DATA_DIR")
@@ -51,15 +66,7 @@ class DatasetPaths:
 ENVIRONMENT_PATHS = DatasetPaths()
 
 
-import shutil
-import tempfile
-import zipfile
-from pathlib import Path
 
-import rasterio
-import requests
-from pyproj import Transformer
-from rasterio.merge import merge
 
 LANDCOVER_WORKSPACE = "mrlc_Land-Cover-Native_conus_year_data"
 IMPERVIOUS_WORKSPACE = "mrlc_Fractional-Impervious-Surface-Native_conus_year_data"
@@ -217,21 +224,7 @@ def download_roads(output_path):
     _download_zip(ROADS_URL, output_path)
 
 
-import argparse
-import os
-import math
-import uuid
-from pathlib import Path
 
-import geopandas as gpd
-import numpy as np
-import pandas as pd
-import rasterio
-from pyproj import Transformer
-from rasterio.enums import Resampling
-from rasterio.windows import Window
-from rasterio.warp import calculate_default_transform, reproject
-from shapely.geometry import Point
 
 VALID_CLASSES = {
     "forest": {41, 42, 43},
