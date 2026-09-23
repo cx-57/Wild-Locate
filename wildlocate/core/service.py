@@ -18,7 +18,7 @@ class PredictionError(Exception):
         self.status_code = status_code
 
 
-def assess_habitat(species, latitude, longitude, region="MA", *, username=None):
+def assess_habitat(species, latitude, longitude, region="MA", *, username=None, radius_km=None):
     from wildlocate.core.regions import get_region
     try:
         selected_region = get_region(region)
@@ -40,8 +40,13 @@ def assess_habitat(species, latitude, longitude, region="MA", *, username=None):
             "invalid_coordinates",
         ) from exc
 
+    if radius_km is not None and (isinstance(radius_km, bool) or radius_km not in (10, 25, 50)):
+        raise PredictionError("Choose a radius of 10, 25 or 50 km.", "invalid_radius")
     try:
         with _prediction_lock:
+            if radius_km is not None:
+                from wildlocate.core.area import predict_area
+                return predict_area(canonical, latitude, longitude, radius_km, region, username=username)
             result = predict_species(canonical, latitude, longitude, region, username=username)
         if not all(math.isfinite(value) for value in result["features"].values()):
             raise ValueError("Environmental feature extraction returned missing values")

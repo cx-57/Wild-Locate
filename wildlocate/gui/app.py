@@ -1,3 +1,4 @@
+"""Main desktop window and launch flow. See docs/gui-guide.md for a walkthrough."""
 import json
 import math
 from pathlib import Path
@@ -10,17 +11,18 @@ from PyQt6.QtWidgets import (
     QApplication, QBoxLayout, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QLineEdit, QMainWindow, QProgressBar, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
+    QTableWidget, QTableWidgetItem, QAbstractItemView,
 )
 
 from wildlocate.core.accounts import normalize_username
 from wildlocate.core.registry import available_species
 from wildlocate.core.regions import REGIONS, get_region
-from wildlocate.gui.client import PredictionClient
-from wildlocate.gui.formatting import coordinates, feature_display, ordinal
+from wildlocate.gui.workers import PredictionClient
+from wildlocate.gui.components import (
+    BrandMark, ChoiceBox, Disclosure, InsightsPanel, STYLESHEET, SuitabilityGauge,
+    app_icon, coordinates, divider, feature_display, label, light_palette, ordinal,
+)
 from wildlocate.gui.location_map import LocationMap
-from wildlocate.gui.insights import InsightsPanel
-from wildlocate.gui.theme import STYLESHEET, light_palette
-from wildlocate.gui.widgets import BrandMark, ChoiceBox, Disclosure, SuitabilityGauge, app_icon, divider, label
 
 
 def button(text, role="", callback=None):
@@ -111,6 +113,8 @@ class MainWindow(QMainWindow):
 
         self.region_choice.currentIndexChanged.connect(self.change_region)
         self.species.currentTextChanged.connect(self.inputs_changed)
+        self.analysis_type.currentIndexChanged.connect(self.analysis_changed)
+        self.radius_choice.currentIndexChanged.connect(self.analysis_changed)
         for field in (self.latitude, self.longitude):
             field.textChanged.connect(self.inputs_changed)
             field.textChanged.connect(self.sync_map)
@@ -183,11 +187,9 @@ class MainWindow(QMainWindow):
         self.species.setAccessibleName("Species")
         self.species.setToolTip("Choose a species with an enabled model. Add models in Manage species.")
         layout.addWidget(self.species)
-        layout.addWidget(label("Choose an available species, or train another in Manage species.", "small", True))
         layout.addSpacing(3)
         layout.addWidget(label("CHOOSE A LOCATION", "step"))
         self.location_map = LocationMap()
-        layout.addWidget(self.location_map)
         self.selected_location = label("", "fieldLabel", True)
         self.selected_location.setAccessibleName("Selected coordinates")
         self.selected_location.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -220,11 +222,37 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.manual_coordinates)
         if self.location_map.view is None:
             self.manual_coordinates.set_expanded(True)
+        options = QHBoxLayout()
+        options.setSpacing(10)
+        mode_column = QVBoxLayout()
+        mode_column.addWidget(label("ANALYSIS", "step"))
+        self.analysis_type = ChoiceBox()
+        self.analysis_type.setAccessibleName("Analysis type")
+        self.analysis_type.addItem("Point analysis", "point")
+        self.analysis_type.addItem("Regional analysis", "regional")
+        self.analysis_type.setObjectName("compactChoice")
+        mode_column.addWidget(self.analysis_type)
+        options.addLayout(mode_column, 2)
+        self.radius_controls = QWidget()
+        radius_layout = QVBoxLayout(self.radius_controls)
+        radius_layout.setContentsMargins(0, 0, 0, 0)
+        radius_layout.addWidget(label("RADIUS", "step"))
+        self.radius_choice = ChoiceBox()
+        self.radius_choice.setAccessibleName("Analysis radius")
+        for radius in (10, 25, 50):
+            self.radius_choice.addItem(f"{radius} km", radius)
+        self.radius_choice.setCurrentIndex(1)
+        self.radius_choice.setObjectName("compactChoice")
+        radius_layout.addWidget(self.radius_choice)
+        self.radius_choice.setToolTip("81 sample points; spacing grows with radius.")
+        options.addWidget(self.radius_controls, 1)
+        layout.addLayout(options)
+        self.radius_controls.hide()
         self.error = label("", "error", True)
         self.error.setAccessibleName("Analysis error")
         layout.addWidget(self.error)
         self.error.hide()
-        layout.addStretch(1)
+        layout.addSpacing(8)
         self.analyze_button = button("Analyze Habitat   →", "primary", self.analyze)
         self.analyze_button.setToolTip("Analyze the selected species and location (Ctrl+Enter)")
         layout.addWidget(self.analyze_button)
@@ -234,6 +262,7 @@ class MainWindow(QMainWindow):
         self.input_note = label("Your analysis runs locally on this computer.", "small", True)
         self.input_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.input_note)
+        layout.addStretch(1)
         return card
 
     def build_results(self):
@@ -250,6 +279,7 @@ class MainWindow(QMainWindow):
         self.result_status = label("AWAITING ANALYSIS", "small")
         row.addWidget(self.result_status)
         layout.addLayout(row)
+        layout.addWidget(self.location_map)
         self.stack = QStackedWidget()
         self.empty_page = QWidget()
         empty_layout = QVBoxLayout(self.empty_page)
@@ -314,12 +344,56 @@ class MainWindow(QMainWindow):
             metadata.addLayout(column, 1)
         result_layout.addLayout(metadata)
         self.stack.addWidget(self.result_page)
-        layout.addWidget(self.stack, 1)
+        self.area_page = QWidget()
+        area_layout = QVBoxLayout(self.area_page)
+        area_layout.setContentsMargins(0, 8, 0, 0)
+        area_layout.setSpacing(10)
+        self.area_heading = label("", "heading", True)
+        self.area_summary = label("", "muted", True)
+        area_layout.addWidget(self.area_heading)
+        area_layout.addWidget(self.area_summary)
+        legend = QHBoxLayout()
+        legend.setSpacing(10)
+        for name, color in (("Very low", "#b5423a"), ("Low", "#d88735"), ("Moderate", "#d5bb45"), ("High", "#80a952"), ("Very high", "#286648"), ("No data", "#858585")):
+            key = label(f"● {name}", "small")
+            key.setStyleSheet(f"color: {color}; font-size: 10px;")
+            legend.addWidget(key)
+        legend.addStretch()
+        area_layout.addLayout(legend)
+        self.area_details = Disclosure("View all scores", "coordinates")
+        self.area_details.body_layout.setContentsMargins(0, 8, 0, 0)
+        self.area_table = QTableWidget(0, 5)
+        self.area_table.setHorizontalHeaderLabels(["Latitude", "Longitude", "Score", "Percentile", "Suitability"])
+        self.area_table.setAccessibleName("Regional suitability grid results")
+        self.area_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.area_table.verticalHeader().hide()
+        self.area_table.horizontalHeader().setStretchLastSection(True)
+        self.area_table.setObjectName("areaTable")
+        self.area_table.setShowGrid(False)
+        self.area_table.setAlternatingRowColors(True)
+        self.area_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.area_table.setFrameShape(QFrame.Shape.NoFrame)
+        self.area_table.verticalHeader().setDefaultSectionSize(26)
+        self.area_table.verticalHeader().setMinimumSectionSize(24)
+        self.area_table.setFixedHeight(210)
+        self.area_details.body_layout.addWidget(self.area_table)
+        area_layout.addWidget(self.area_details)
+        area_layout.addStretch()
+        self.stack.addWidget(self.area_page)
+        self.stack.currentChanged.connect(self.fit_result_height)
+        self.area_details.toggle.toggled.connect(self.fit_result_height)
+        self.fit_result_height()
+        layout.addWidget(self.stack)
         layout.addWidget(label("The suitability score is relative and does not represent the probability that the species is currently present.", "notice", True))
         self.export_button = button("↓  Export assessment as JSON", "link", self.export_result)
         self.export_button.hide()
         layout.addWidget(self.export_button)
         return card
+
+    def fit_result_height(self, *_):
+        page = self.stack.currentWidget()
+        page.layout().activate()
+        self.stack.setFixedHeight(page.sizeHint().height())
 
     def build_methodology(self):
         info = Disclosure("Assessment Info", "methodology")
@@ -381,7 +455,7 @@ class MainWindow(QMainWindow):
     def manage_species(self):
         if self.client.busy or self.username is None:
             return
-        from wildlocate.gui.species_manager import SpeciesManager
+        from wildlocate.gui.dialogs import SpeciesManager
         dialog = SpeciesManager(self, region=self.region, username=self.username)
         dialog.models_changed.connect(self.refresh_species)
         dialog.exec()
@@ -423,7 +497,14 @@ class MainWindow(QMainWindow):
         self.selected_location.setText(coordinates(latitude, longitude))
         self.location_map.set_location(latitude, longitude, recenter=recenter)
 
+    def analysis_changed(self):
+        regional = self.analysis_type.currentData() == "regional"
+        self.radius_controls.setVisible(regional)
+        self.inputs_changed()
+        self.location_map.set_area(self.radius_choice.currentData() if regional else None)
+
     def inputs_changed(self):
+        self.location_map.set_area(self.radius_choice.currentData() if self.analysis_type.currentData() == "regional" else None)
         self.error.hide()
         for field in (self.species, self.latitude, self.longitude):
             field.setProperty("invalid", False)
@@ -480,6 +561,7 @@ class MainWindow(QMainWindow):
             return
         self.error.hide()
         self.result = None
+        self.location_map.set_area(self.radius_choice.currentData() if self.analysis_type.currentData() == "regional" else None)
         self.insights.hide()
         self.environment.hide()
         self.export_button.hide()
@@ -490,10 +572,13 @@ class MainWindow(QMainWindow):
         self._started_at = time.monotonic()
         self.update_elapsed()
         self.timer.start()
-        self.client.analyze(species, *values, region=self.region)
+        radius = self.radius_choice.currentData() if self.analysis_type.currentData() == "regional" else None
+        if radius is not None:
+            self.empty_text.setText("Evaluating 81 grid points in the surrounding area. Missing environmental tiles may need to download. You can cancel at any time.")
+        self.client.analyze(species, *values, region=self.region, radius_km=radius)
 
     def set_busy(self, busy):
-        for widget in (self.species, self.latitude, self.longitude, self.location_map, self.example_button, self.analyze_button, self.manage_species_button, self.region_choice):
+        for widget in (self.species, self.latitude, self.longitude, self.location_map, self.example_button, self.analyze_button, self.manage_species_button, self.region_choice, self.analysis_type, self.radius_choice):
             widget.setEnabled(not busy)
         self.manage_species_button.setEnabled(not busy and self.username is not None)
         self.analyze_button.setEnabled(not busy and bool(self.species.count()))
@@ -511,6 +596,9 @@ class MainWindow(QMainWindow):
     def show_result(self, result):
         self.set_busy(False)
         self.result = result
+        if result.get("analysis_type") == "regional":
+            self.show_area_result(result)
+            return
         self.result_species.setText(result["species"])
         self.result_location.setText(coordinates(result["latitude"], result["longitude"]))
         self.category.setText(f"{result['category'].upper()} HABITAT SUITABILITY")
@@ -537,6 +625,50 @@ class MainWindow(QMainWindow):
         self.show_insights(result.get("insights", {}))
         self.export_button.show()
         self.input_note.setText("Assessment complete. Explore another location.")
+
+    def show_area_result(self, result):
+        self.area_heading.setText(f"{result['species']} · {result['radius_km']} km radius")
+        summary = (
+            f"Centered at {coordinates(result['latitude'], result['longitude'])}. "
+            f"{result['evaluated_points']} points scored; {result['unavailable_points']} unavailable. "
+            f"Grid spacing: {result['grid_spacing_km']:g} km. "
+        )
+        if result['mean_score'] is None:
+            summary += "No grid points could be evaluated. Try another location or a smaller radius."
+        else:
+            summary += f"Mean score of evaluated points: {result['mean_score']:.3f}. "
+        summary += f" Model: {result['model']}; {result['training_observations']:,} training observations. This is a sampled grid, not continuous habitat coverage."
+        if result['mean_score'] is None:
+            brief = "No grid points could be evaluated. Try another location or a smaller radius."
+        else:
+            brief = f"{result['evaluated_points']} points scored · Mean score {result['mean_score']:.3f} · {result['grid_spacing_km']:g} km spacing"
+            if result['unavailable_points']:
+                brief += f" · {result['unavailable_points']} unavailable"
+        self.area_summary.setText(brief)
+        self.area_summary.setToolTip(summary)
+        self.area_details.set_expanded(False)
+        self.interpretation.setText(summary)
+        self.area_table.setRowCount(len(result['points']))
+        for row, point in enumerate(result['points']):
+            ok = point['status'] == 'ok'
+            values = [f"{point['latitude']:.5f}", f"{point['longitude']:.5f}",
+                      f"{point['score']:.3f}" if ok else "—",
+                      str(point['percentile']) if ok else "—",
+                      point['category'] if ok else "Unavailable"]
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if not ok:
+                    item.setToolTip(point.get('reason', 'Environmental data unavailable'))
+                self.area_table.setItem(row, col, item)
+        self.area_table.resizeColumnsToContents()
+        self.stack.setCurrentWidget(self.area_page)
+        self.fit_result_height()
+        self.environment.hide()
+        self.insights.hide()
+        self.export_button.show()
+        self.result_status.setText("REGIONAL ASSESSMENT COMPLETE" if result['evaluated_points'] else "NO COVERAGE")
+        self.location_map.set_area(result['radius_km'], result['points'])
+        self.input_note.setText("Select a map point to see its score.")
 
     def show_insights(self, insights):
         while self.insights.body_layout.count():
@@ -609,7 +741,7 @@ def create_application(argv=None):
 
 def main():
     app = create_application()
-    from wildlocate.gui.login import LoginDialog
+    from wildlocate.gui.dialogs import LoginDialog
     from PyQt6.QtWidgets import QDialog
     while True:
         login = LoginDialog()

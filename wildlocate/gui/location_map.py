@@ -6,7 +6,7 @@ from PyQt6.QtCore import QObject, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
-from wildlocate.gui.widgets import label
+from wildlocate.gui.components import label
 
 try:
     from PyQt6.QtWebChannel import QWebChannel
@@ -55,6 +55,8 @@ class LocationMap(QWidget):
         self._ready = False
         self._pending_recenter = False
         self._location = (42.3718, -72.2820)
+        self._radius_km = None
+        self._area_points = []
         self.region_center = (42.2, -71.7)
         self.view = None
         layout = QVBoxLayout(self)
@@ -71,7 +73,7 @@ class LocationMap(QWidget):
         self.profile.setHttpCacheMaximumSize(64 * 1024 * 1024)
         self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies)
         self.view = QWebEngineView(self)
-        self.view.setMinimumHeight(230)
+        self.view.setMinimumHeight(300)
         self.view.setAccessibleName("Location map. Click to choose a location, or enter coordinates below.")
         self.page = MapPage(self.profile, self.view)
         self.view.setPage(self.page)
@@ -120,12 +122,18 @@ class LocationMap(QWidget):
         super().setEnabled(enabled)
         self.send_state()
 
+    def set_area(self, radius_km=None, points=None):
+        self._radius_km = radius_km
+        self._area_points = points or []
+        self.send_state()
+
     def send_state(self, *, recenter=False):
         self._pending_recenter = self._pending_recenter or recenter
         if self._ready:
             recenter = self._pending_recenter
             self._pending_recenter = False
             state = {"latitude": self._location[0], "longitude": self._location[1], "enabled": self.isEnabled(), "recenter": recenter, "regionCenter": self.region_center}
+            state.update(radiusKm=self._radius_km, areaPoints=self._area_points)
             self.page.runJavaScript(f"window.setLocationState({json.dumps(state, allow_nan=False)});")
 
     def shutdown(self):
