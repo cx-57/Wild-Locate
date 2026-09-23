@@ -1,4 +1,4 @@
-"""Main desktop window and launch flow. See docs/gui-guide.md for a walkthrough."""
+"""Main desktop window and launch flow."""
 import json
 import math
 from pathlib import Path
