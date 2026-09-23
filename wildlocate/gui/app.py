@@ -1634,7 +1634,7 @@ class MainWindow(QMainWindow):
     def manage_species(self):
         if self.client.busy or self.username is None:
             return
-                dialog = SpeciesManager(self, region=self.region, username=self.username)
+        dialog = SpeciesManager(self, region=self.region, username=self.username)
         dialog.models_changed.connect(self.refresh_species)
         dialog.exec()
         self.refresh_species()
