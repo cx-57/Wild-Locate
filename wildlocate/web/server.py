@@ -22,7 +22,7 @@ from wildlocate.core.registry import (
     enable_model,
     list_models,
 )
-from wildlocate.core.regions import REGIONS, get_region
+from wildlocate.core.regional import REGIONS, get_region
 from wildlocate.core.registry import cleanup_job
 
 ROOT = Path(__file__).resolve().parent
