@@ -123,6 +123,24 @@
             <button id="export" type="button" class="text-button">Export JSON ↓</button>
           </div>
           <div id="metrics" class="metrics"></div>
+
+          <section id="point-percentile" class="percentile-card" hidden aria-label="Relative habitat percentile">
+            <div class="percentile-heading">
+              <div>
+                <span class="eyebrow">RELATIVE HABITAT PERCENTILE</span>
+                <strong id="percentile-value">—</strong>
+              </div>
+              <span id="percentile-category" class="percentile-category"></span>
+            </div>
+            <div id="percentile-track" class="percentile-track" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <span class="percentile-marker" id="percentile-marker" aria-hidden="true"></span>
+            </div>
+            <div class="percentile-scale" aria-hidden="true">
+              <span>0</span><span>20</span><span>40</span><span>60</span><span>80</span><span>100</span>
+            </div>
+            <p id="percentile-copy" class="percentile-copy"></p>
+          </section>
+
           <p id="result-note" class="hint"></p>
           <div id="legend" class="legend" aria-label="Suitability categories">
             <span><i class="very-low"></i>Very low</span><span><i class="low"></i>Low</span>
