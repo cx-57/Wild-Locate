@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-
 import json
 import logging
-from threading import Lock
-
-from wildlocate.core.registry import available_species
 import math
+from threading import Lock
 
 import joblib
 import numpy as np
@@ -13,9 +10,8 @@ import pandas as pd
 from pyproj import Geod
 
 from wildlocate.core.environment import extract_features
-from wildlocate.core.registry import resolve_model
+from wildlocate.core.registry import available_species, resolve_model
 from wildlocate.core.regional import get_region
-
 
 def format_model_name(model_name):
     if model_name == "RandomForest":
