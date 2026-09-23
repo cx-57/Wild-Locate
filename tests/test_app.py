@@ -233,6 +233,42 @@ class SpeciesSearchTests(unittest.TestCase):
         self.assertEqual(results[0]["observation_count"], 1500)
         self.assertTrue(all(item["rank"] == "species" for item in results))
 
+    def test_scientific_name_resolution_fetches_full_taxon_when_autocomplete_is_sparse(self):
+        from wildlocate.core import observations
+
+        def fake_api(endpoint, params=None):
+            if endpoint == "/taxa/autocomplete":
+                return {
+                    "results": [
+                        {
+                            "id": 123,
+                            "name": "Lampropeltis triangulum",
+                            "rank": "species",
+                            "iconic_taxon_name": "Reptilia",
+                        }
+                    ]
+                }
+            if endpoint == "/taxa/123":
+                return {
+                    "results": [
+                        {
+                            "id": 123,
+                            "name": "Lampropeltis triangulum",
+                            "rank": "species",
+                            "iconic_taxon_name": "Reptilia",
+                            "preferred_common_name": "Eastern Milksnake",
+                        }
+                    ]
+                }
+            self.fail(f"Unexpected endpoint: {endpoint}")
+
+        with patch.object(observations, "api_get", side_effect=fake_api):
+            result = observations.resolve_species("Lampropeltis triangulum")
+
+        self.assertEqual(result["common_name"], "Eastern Milksnake")
+        self.assertEqual(result["scientific_name"], "Lampropeltis triangulum")
+        self.assertEqual(result["taxon_id"], 123)
+
     def test_generic_mammal_word_finds_species_containing_that_word(self):
         from wildlocate.core import observations
 
