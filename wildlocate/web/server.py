@@ -494,8 +494,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: https://*.basemaps.cartocdn.com "
-            "https://tile.openstreetmap.org; connect-src 'self'; "
+            "img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; "
             "frame-ancestors 'none'; base-uri 'none'",
         )
         self.end_headers()
