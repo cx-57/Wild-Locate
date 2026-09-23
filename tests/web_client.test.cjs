@@ -180,8 +180,7 @@ test('Partial species search renders state-valid suggestions before training',as
     'American Alligator'
   );
 
-  b.get('training-suggestions').children[0].click();
-  await new Promise(resolve=>setImmediate(resolve));
+  await b.get('training-suggestions').children[0].click();
   assert.equal(b.get('training-query').value,'American Alligator');
   assert.equal(b.get('training-match').hidden,false);
   assert.match(b.get('training-match').textContent,/American Alligator/);
