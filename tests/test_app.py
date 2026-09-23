@@ -184,6 +184,83 @@ class AreaUITests(unittest.TestCase):
 
 # -----------------------------------------------------------------------------
 
+class SpeciesSearchTests(unittest.TestCase):
+    def test_partial_query_returns_state_observed_species_only(self):
+        from wildlocate.core import observations
+
+        taxa = {
+            "results": [
+                {
+                    "id": 10, "name": "Alligator", "rank": "genus",
+                    "iconic_taxon_name": "Reptilia",
+                    "preferred_common_name": "Alligators",
+                },
+                {
+                    "id": 20, "name": "Alligator mississippiensis", "rank": "species",
+                    "iconic_taxon_name": "Reptilia",
+                    "preferred_common_name": "American Alligator",
+                },
+                {
+                    "id": 30, "name": "Alligator sinensis", "rank": "species",
+                    "iconic_taxon_name": "Reptilia",
+                    "preferred_common_name": "Chinese Alligator",
+                },
+                {
+                    "id": 40, "name": "Alligator example", "rank": "species",
+                    "iconic_taxon_name": "Reptilia",
+                    "preferred_common_name": "Example Alligator",
+                },
+            ]
+        }
+
+        def fake_api(endpoint, params=None):
+            if endpoint == "/taxa/autocomplete":
+                return taxa
+            if endpoint == "/observations":
+                counts = {20: 1500, 30: 0, 40: 25}
+                return {"total_results": counts[int(params["taxon_id"])]}
+            self.fail(f"Unexpected endpoint: {endpoint}")
+
+        with patch.object(observations, "find_place_id", return_value=21), patch.object(
+            observations, "api_get", side_effect=fake_api
+        ):
+            results = observations.species_suggestions("alligator", "Florida", limit=3)
+
+        self.assertEqual(
+            [item["common_name"] for item in results],
+            ["American Alligator", "Example Alligator"],
+        )
+        self.assertEqual(results[0]["observation_count"], 1500)
+        self.assertTrue(all(item["rank"] == "species" for item in results))
+
+    def test_cached_background_pool_is_capped_at_8000(self):
+        from wildlocate.core import observations
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "reptile_pool.csv"
+            count = observations.DEFAULT_MAX_BACKGROUND_POOL + 50
+            pd.DataFrame(
+                {
+                    "observation_id": range(count),
+                    "taxon_id": [1] * count,
+                    "taxon_name": ["Species"] * count,
+                    "common_name": ["Animal"] * count,
+                    "latitude": [28.0] * count,
+                    "longitude": [-81.0] * count,
+                    "positional_accuracy": [10] * count,
+                    "observed_on": ["2026-01-01"] * count,
+                    "coordinates_obscured": [False] * count,
+                }
+            ).to_csv(path, index=False)
+
+            pool = observations.load_or_create_target_group_pool(
+                "Reptilia", pool_file=path, place_name="Florida"
+            )
+
+            self.assertEqual(len(pool), 8000)
+            self.assertEqual(len(pd.read_csv(path)), 8000)
+
+
 # Web server tests
 from wildlocate.web.server import JobManager, create_server
 
@@ -269,6 +346,42 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(config['username'], 'testuser')
         self.assertIn('Bobcat', ma['species'])
         self.assertEqual(config['token'], self.server.token)
+
+    def test_species_suggestions_endpoint_uses_selected_state(self):
+        suggestions = [
+            {
+                "taxon_id": 20,
+                "common_name": "American Alligator",
+                "scientific_name": "Alligator mississippiensis",
+                "rank": "species",
+                "iconic_taxon_name": "Reptilia",
+                "observation_count": 1500,
+            }
+        ]
+        with patch("wildlocate.web.server.species_suggestions", return_value=suggestions) as search:
+            status, data = self.request(
+                "POST",
+                "/api/species/suggestions",
+                {"region": "FL", "query": "alligator"},
+            )
+        self.assertEqual(status, 200)
+        payload = json.loads(data)
+        self.assertEqual(payload["region"], "FL")
+        self.assertEqual(payload["suggestions"][0]["common_name"], "American Alligator")
+        search.assert_called_once_with("alligator", "Florida", limit=3)
+
+    def test_map_responses_allow_cross_origin_referrer(self):
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", self.server.server_port, timeout=3
+        )
+        connection.request("GET", "/", headers={"Host": f"127.0.0.1:{self.server.server_port}"})
+        response = connection.getresponse()
+        response.read()
+        self.assertEqual(
+            response.getheader("Referrer-Policy"),
+            "strict-origin-when-cross-origin",
+        )
+        connection.close()
 
     def test_login_logout_and_auth_gate(self):
         self.server.username = None
