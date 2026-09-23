@@ -86,7 +86,7 @@ def cmd_init(args):
 
 def cmd_status(args):
     if getattr(args, "region", "MA") != "MA":
-        from wildlocate.core.regions import get_region, region_root
+        from wildlocate.core.regional import get_region, region_root
         from wildlocate.core.registry import available_species
         region = get_region(args.region)
         root = region_root(region)
