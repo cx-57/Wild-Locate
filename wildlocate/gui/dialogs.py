@@ -137,7 +137,7 @@ class SpeciesManager(QDialog):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
         layout.addWidget(label("Manage species", "heading"))
-        layout.addWidget(label(f"Train and review habitat models for {self.region.name} mammals.", "muted", True))
+        layout.addWidget(label(f"Train and review habitat models for {self.region.name} mammals and reptiles.", "muted", True))
         if self.region.code != "MA":
             layout.addWidget(label("Experimental regional models use national land-cover and terrain data. Missing tiles download during training; this may take a while. Suggested species: " + ", ".join(self.region.examples), "muted", True))
         self.tabs = QTabWidget()
@@ -194,7 +194,7 @@ class SpeciesManager(QDialog):
         content.setObjectName("page")
         layout = QVBoxLayout(content)
         layout.setSpacing(12)
-        layout.addWidget(label(f"1. Find a {self.region.name} mammal", "subheading"))
+        layout.addWidget(label(f"1. Find a {self.region.name} mammal or reptile", "subheading"))
         layout.addWidget(label("Enter a common or scientific name. Observations come from iNaturalist; internet access is needed for downloads.", "muted", True))
         row = QHBoxLayout()
         self.query = QLineEdit()
@@ -368,7 +368,11 @@ class SpeciesManager(QDialog):
         if kind == "resolved":
             self.taxon = event
             self.state = "resolved"
-            self.match.setText(f"{event['common_name']} ({event['scientific_name']})\nMammal species · {self.region.name} observations only")
+            group_name = "Reptile" if event.get("iconic_taxon_name") == "Reptilia" else "Mammal"
+            self.match.setText(
+                f"{event['common_name']} ({event['scientific_name']})\n"
+                f"{group_name} species · {self.region.name} observations only"
+            )
             self.match.show()
             self.status.setText("Confirm this species to download and check its observations.")
         elif kind == "prepared":
