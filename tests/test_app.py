@@ -214,7 +214,7 @@ class SpeciesSearchTests(unittest.TestCase):
         }
 
         def fake_api(endpoint, params=None):
-            if endpoint == "/taxa/autocomplete":
+            if endpoint in {"/taxa/autocomplete", "/taxa"}:
                 return taxa
             if endpoint == "/observations":
                 counts = {20: 1500, 30: 0, 40: 25}
@@ -232,6 +232,115 @@ class SpeciesSearchTests(unittest.TestCase):
         )
         self.assertEqual(results[0]["observation_count"], 1500)
         self.assertTrue(all(item["rank"] == "species" for item in results))
+
+    def test_generic_mammal_word_finds_species_containing_that_word(self):
+        from wildlocate.core import observations
+
+        autocomplete = {
+            "results": [
+                {
+                    "id": 100,
+                    "name": "Cervidae",
+                    "rank": "family",
+                    "iconic_taxon_name": "Mammalia",
+                    "preferred_common_name": "Deer",
+                }
+            ]
+        }
+        broad = {
+            "results": [
+                {
+                    "id": 101,
+                    "name": "Odocoileus virginianus",
+                    "rank": "species",
+                    "iconic_taxon_name": "Mammalia",
+                    "preferred_common_name": "White-tailed Deer",
+                },
+                {
+                    "id": 102,
+                    "name": "Odocoileus hemionus",
+                    "rank": "species",
+                    "iconic_taxon_name": "Mammalia",
+                    "preferred_common_name": "Mule Deer",
+                },
+                {
+                    "id": 103,
+                    "name": "Cervus canadensis",
+                    "rank": "species",
+                    "iconic_taxon_name": "Mammalia",
+                    "preferred_common_name": "Elk",
+                },
+            ]
+        }
+
+        def fake_api(endpoint, params=None):
+            if endpoint == "/taxa/autocomplete":
+                return autocomplete
+            if endpoint == "/taxa":
+                return broad
+            if endpoint == "/observations":
+                counts = {101: 2000, 102: 0}
+                return {"total_results": counts[int(params["taxon_id"])]}
+            self.fail(f"Unexpected endpoint: {endpoint}")
+
+        with patch.object(observations, "find_place_id", return_value=1), patch.object(
+            observations, "api_get", side_effect=fake_api
+        ):
+            results = observations.species_suggestions("deer", "Massachusetts", limit=3)
+
+        self.assertEqual(
+            [item["common_name"] for item in results],
+            ["White-tailed Deer"],
+        )
+
+    def test_background_sampling_uses_available_candidates_instead_of_three_to_one(self):
+        from wildlocate.core import observations
+
+        with tempfile.TemporaryDirectory() as folder:
+            samples = Path(folder)
+            species = "Test Deer"
+            presence_count = 100
+            presence = pd.DataFrame(
+                {
+                    "latitude": np.linspace(28.0, 28.9, presence_count),
+                    "longitude": np.linspace(-81.0, -80.1, presence_count),
+                }
+            )
+            presence.to_csv(
+                samples / f"{observations.species_slug(species)}_occurrences.csv",
+                index=False,
+            )
+
+            candidates = pd.DataFrame(
+                {
+                    "latitude": np.linspace(27.0, 27.49, 50),
+                    "longitude": np.linspace(-82.0, -81.51, 50),
+                    "observation_id": range(50),
+                    "taxon_id": [999] * 50,
+                    "taxon_name": ["Other species"] * 50,
+                    "common_name": ["Other animal"] * 50,
+                }
+            )
+
+            with patch.object(
+                observations, "load_or_create_target_group_pool", return_value=candidates
+            ), patch.object(
+                observations, "filter_target_group_pool", return_value=candidates
+            ), patch.object(
+                observations, "compute_min_distance_to_presence",
+                return_value=np.full(len(candidates), 5000.0),
+            ), patch.object(
+                observations, "spatial_thin", return_value=candidates
+            ):
+                result = observations.generate_background(
+                    species,
+                    samples_dir=samples,
+                    taxon_id=123,
+                    target_group="Mammalia",
+                    place_name="Florida",
+                )
+
+        self.assertEqual(len(result), 50)
 
     def test_cached_background_pool_is_capped_at_8000(self):
         from wildlocate.core import observations
