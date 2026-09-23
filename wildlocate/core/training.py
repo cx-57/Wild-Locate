@@ -11,6 +11,7 @@ from wildlocate.core.registry import (
 )
 
 MIN_OBSERVATIONS = 25
+SUPPORTED_TARGET_GROUPS = {"Mammalia": "mammal", "Reptilia": "reptile"}
 
 
 class TrainingSession:
@@ -58,8 +59,10 @@ class TrainingSession:
         self.prepared = None
         self.progress("Finding the species on iNaturalist…")
         taxon = resolve_species(query)
-        if taxon.get("rank") != "species" or taxon.get("iconic_taxon_name") != "Mammalia":
-            raise ValueError("Choose a mammal species. This training workflow supports mammals only.")
+        if taxon.get("rank") != "species":
+            raise ValueError("Choose a species-level taxon.")
+        if taxon.get("iconic_taxon_name") not in SUPPORTED_TARGET_GROUPS:
+            raise ValueError("Choose a mammal or reptile species.")
         if len(taxon["common_name"]) > 100:
             raise ValueError("This species name is too long to store.")
         self.taxon = taxon
@@ -72,7 +75,7 @@ class TrainingSession:
         )
         self.prepared = None
         if self.taxon is None:
-            raise ValueError("Find and confirm a mammal species first.")
+            raise ValueError("Find and confirm a mammal or reptile species first.")
         self.progress(f"Checking the {self.region.name} environmental datasets…")
         if self.region.code == "MA":
             DatasetPaths().validate()
@@ -90,7 +93,7 @@ class TrainingSession:
             raise ValueError(
                 f"Only {len(cleaned):,} usable observations remain out of {len(raw):,}. "
                 f"At least {MIN_OBSERVATIONS} are required to attempt spatial validation. "
-                f"Try another {self.region.name} mammal; obscured, duplicate and imprecise locations are excluded."
+                f"Try another {self.region.name} mammal or reptile; obscured, duplicate and imprecise locations are excluded."
             )
         save_cleaned_observations(cleaned, self.taxon["common_name"], self.workspace / "samples")
         self.prepared = {"species": self.taxon["common_name"], "raw_count": len(raw), "cleaned_count": len(cleaned), "download_limit": self.max_observations}
@@ -105,14 +108,28 @@ class TrainingSession:
             raise ValueError("Check species data before starting training.")
         name = self.taxon["common_name"]
         samples = self.workspace / "samples"
-        pool = self.workspace / "mammal_pool.csv"
+        target_group = self.taxon["iconic_taxon_name"]
+        group_label = SUPPORTED_TARGET_GROUPS[target_group]
+        pool = self.workspace / f"{group_label}_pool.csv"
         from wildlocate.core.regions import region_root
-        cached_pool = region_root(self.region) / "training-cache" / f"{self.region.name.lower()}_mammal_pool.csv"
+        region_slug = self.region.name.lower().replace(" ", "_")
+        cached_pool = (
+            region_root(self.region)
+            / "training-cache"
+            / f"{region_slug}_{group_label}_pool.csv"
+        )
         if cached_pool.is_file():
             shutil.copyfile(cached_pool, pool)
-        self.progress(f"Preparing background locations across {self.region.name}…")
-        generate_background(name, samples_dir=samples, pool_file=pool,
-                            taxon_id=self.taxon["taxon_id"], progress=self.progress, place_name=self.region.name)
+        self.progress(f"Preparing {group_label} background locations across {self.region.name}…")
+        generate_background(
+            name,
+            samples_dir=samples,
+            pool_file=pool,
+            taxon_id=self.taxon["taxon_id"],
+            progress=self.progress,
+            place_name=self.region.name,
+            target_group=target_group,
+        )
         if pool.is_file():
             cached_pool.parent.mkdir(parents=True, exist_ok=True)
             temporary = cached_pool.with_suffix(f".{self.job_id}.tmp")
