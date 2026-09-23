@@ -303,6 +303,7 @@ function clearResult() {
   $('empty').hidden = false;
   $('scores').open = false;
   $('conditions').open = false;
+  $('point-percentile').hidden = true;
   error('');
 }
 
@@ -442,10 +443,23 @@ function showResult(data) {
     metric(String(data.evaluated_points), 'Points scored');
     metric(`${data.grid_spacing_km} km`, 'Grid spacing');
     if (data.unavailable_points) metric(String(data.unavailable_points), 'Unavailable');
+    $('point-percentile').hidden = true;
   } else {
     metric(number(data.score), 'Suitability score');
-    metric(String(data.percentile), 'Percentile');
     metric(data.category, 'Habitat suitability');
+
+    const percentile = Math.max(0, Math.min(100, Number(data.percentile) || 0));
+    $('point-percentile').hidden = false;
+    $('percentile-value').textContent = `${Math.round(percentile)}th percentile`;
+    $('percentile-category').textContent = data.category || '';
+    $('percentile-marker').style.left = `${percentile}%`;
+    $('percentile-track').setAttribute('aria-valuenow', String(percentile));
+    $('percentile-track').setAttribute(
+      'aria-valuetext',
+      `${Math.round(percentile)}th percentile, ${data.category || 'habitat suitability'}`
+    );
+    $('percentile-copy').textContent =
+      `This location received a higher habitat-suitability score than approximately ${Math.round(percentile)}% of comparison locations for this species.`;
   }
 
   $('result-note').textContent =
