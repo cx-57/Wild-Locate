@@ -1,54 +1,16 @@
 #!/usr/bin/env python3
 
 import argparse
-import math
-import re
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import requests
 from pyproj import Transformer
 
-from wildlocate.core.data.inaturalist import resolve_species
+from wildlocate.core.data.inaturalist import api_get, extract_observation_row, find_place_id, resolve_species, species_slug
 
-API_BASE = "https://api.inaturalist.org/v1"
 MAMMAL_POOL_FILE = Path("data/processed/samples/massachusetts_mammal_pool.csv")
 DEFAULT_MAX_MAMMAL_POOL = 20000
-
-
-def species_slug(species_name):
-    slug = re.sub(r"[^a-z0-9]+", "_", species_name.strip().lower())
-    slug = slug.strip("_")
-    if not slug:
-        raise ValueError("Species name is required.")
-    return slug
-
-
-def api_get(endpoint, params=None):
-    response = requests.get(f"{API_BASE}{endpoint}", params=params, timeout=60)
-    response.raise_for_status()
-    data = response.json()
-    if "error" in data:
-        raise RuntimeError(data["error"])
-    return data
-
-
-def find_place_id(place_name):
-    from wildlocate.core.regions import REGIONS
-    for region in REGIONS.values():
-        if str(place_name).casefold() in (region.name.casefold(), region.code.casefold()):
-            return region.place_id
-    place_name = place_name.strip()
-    if not place_name:
-        raise ValueError("Place name is required.")
-
-    data = api_get("/places/autocomplete", {"q": place_name, "per_page": 20})
-    results = data.get("results", [])
-    if not results:
-        raise RuntimeError(f"Could not find place: {place_name}")
-    return int(results[0]["id"])
 
 
 def download_mammal_pool(place_name="Massachusetts", progress=None):
@@ -78,36 +40,17 @@ def download_mammal_pool(place_name="Massachusetts", progress=None):
             break
 
         for obs in batch:
-            geojson = obs.get("geojson") or {}
-            coords = geojson.get("coordinates")
-            if not coords or len(coords) < 2:
+            row = extract_observation_row(obs)
+            if row is None:
                 continue
-
-            longitude, latitude = coords[:2]
-            try:
-                latitude = float(latitude)
-                longitude = float(longitude)
-            except (TypeError, ValueError):
-                continue
-
-            if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
-                continue
-
-            taxon = obs.get("taxon") or {}
-            rows.append(
-                {
-                    "observation_id": obs.get("id"),
-                    "taxon_id": taxon.get("id"),
-                    "taxon_name": taxon.get("scientific_name") or taxon.get("name"),
-                    "common_name": taxon.get("preferred_common_name") or taxon.get("common_name"),
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "positional_accuracy": obs.get("positional_accuracy"),
-                    "observed_on": obs.get("observed_on"),
-                    "coordinates_obscured": bool(obs.get("obscured", False)),
-                }
-            )
-
+            rows.append({
+                key: row[key]
+                for key in (
+                    "observation_id", "taxon_id", "taxon_name", "common_name",
+                    "latitude", "longitude", "positional_accuracy", "observed_on",
+                    "coordinates_obscured",
+                )
+            })
             total_rows += 1
             if total_rows >= DEFAULT_MAX_MAMMAL_POOL:
                 break
