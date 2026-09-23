@@ -1,6 +1,17 @@
 import json
 import os
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+import sys
+
+# PyQt6 on macOS ships the native Cocoa platform plugin, not the Linux-style
+# offscreen plugin. Configure Qt before importing any Qt widgets so the same
+# suite can run on the developer Mac and in headless Linux environments.
+if sys.platform == "darwin":
+    from wildlocate.cli import _configure_qt_runtime
+    _configure_qt_runtime()
+    os.environ.setdefault("QT_QPA_PLATFORM", "cocoa")
+elif sys.platform.startswith("linux"):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 import tempfile
 from pathlib import Path
 import unittest
