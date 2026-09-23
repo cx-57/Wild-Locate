@@ -1938,7 +1938,6 @@ def create_application(argv=None):
 
 def main():
     app = create_application()
-        from PyQt6.QtWidgets import QDialog
     while True:
         login = LoginDialog()
         if login.exec() != QDialog.DialogCode.Accepted:
