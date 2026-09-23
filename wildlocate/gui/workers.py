@@ -29,7 +29,7 @@ class PredictionClient(QObject):
         if interpreter.name.lower() == "pythonw.exe":
             interpreter = interpreter.with_name("python.exe")
         self.process.setProgram(str(interpreter))
-        arguments = ["-u", "-m", "wildlocate.core.prediction_worker"]
+        arguments = ["-u", "-m", "wildlocate.core.worker", "predict"]
         if username is not None:
             arguments.extend(["--account", username])
         self.process.setArguments(arguments)
@@ -137,7 +137,7 @@ class TrainingClient(QObject):
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.job_id = new_job_id()
             self._buffer = b""
-            self.process.setArguments(["-u", "-m", "wildlocate.core.training_worker", "--job-id", self.job_id, "--region", self.region, "--account", self.username])
+            self.process.setArguments(["-u", "-m", "wildlocate.core.worker", "train", "--job-id", self.job_id, "--region", self.region, "--account", self.username])
             self.process.start()
         else:
             self.send_pending()

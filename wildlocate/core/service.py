@@ -3,7 +3,7 @@ import math
 from threading import Lock
 
 from wildlocate.core.registry import available_species
-from wildlocate.core.predict import predict_species, validate_lat_lon
+from wildlocate.core.predict import predict_area, predict_species, validate_lat_lon
 
 logger = logging.getLogger(__name__)
 # The existing extractor caches open raster handles. Serialize calls without
@@ -45,7 +45,6 @@ def assess_habitat(species, latitude, longitude, region="MA", *, username=None, 
     try:
         with _prediction_lock:
             if radius_km is not None:
-                from wildlocate.core.area import predict_area
                 return predict_area(canonical, latitude, longitude, radius_km, region, username=username)
             result = predict_species(canonical, latitude, longitude, region, username=username)
         if not all(math.isfinite(value) for value in result["features"].values()):
