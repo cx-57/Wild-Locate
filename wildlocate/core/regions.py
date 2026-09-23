@@ -34,7 +34,7 @@ def get_region(value='MA'):
 
 
 def region_root(region='MA'):
-    from wildlocate.core.data.environment import get_user_data_dir
+    from wildlocate.core.environment import get_user_data_dir
     code = get_region(region).code
     root = get_user_data_dir()
     return root if code == 'MA' else root / 'regions' / code
