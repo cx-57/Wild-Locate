@@ -1,9 +1,16 @@
 """Wild-Locate Python regression tests."""
 
-# From tests/test_area.py
+import http.client
 import json
 import os
+from pathlib import Path
+import stat
 import sys
+import tempfile
+import threading
+import time
+import unittest
+from unittest.mock import patch
 
 # PyQt6 on macOS ships the native Cocoa platform plugin, not the Linux-style
 # offscreen plugin. Configure Qt before importing any Qt widgets so the same
@@ -14,11 +21,6 @@ if sys.platform == "darwin":
     os.environ.setdefault("QT_QPA_PLATFORM", "cocoa")
 elif sys.platform.startswith("linux"):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-import tempfile
-from pathlib import Path
-import unittest
-from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -182,15 +184,7 @@ class AreaUITests(unittest.TestCase):
 
 # -----------------------------------------------------------------------------
 
-# From tests/test_web.py
-import http.client
-import json
-import sys
-import threading
-import time
-import unittest
-from unittest.mock import patch
-
+# Web server tests
 from wildlocate.web.server import JobManager, create_server
 
 PAYLOAD = {'species': 'Bobcat', 'latitude': 42.37, 'longitude': -72.28, 'region': 'MA', 'radius_km': 25}
@@ -332,15 +326,7 @@ class ServerTests(unittest.TestCase):
 
 # -----------------------------------------------------------------------------
 
-# From tests/test_cli_launch.py
-import os
-from pathlib import Path
-import stat
-import sys
-import tempfile
-import unittest
-from unittest.mock import patch
-
+# macOS launch regression
 from wildlocate.cli import _configure_qt_runtime
 
 
