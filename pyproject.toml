@@ -32,11 +32,7 @@ include = ["wildlocate*"]
 namespaces = false
 
 [tool.setuptools.package-data]
-"wildlocate" = [
-    "data/processed/models/*.joblib",
-    "data/processed/models/*.json",
-    "data/processed/features/species/*.csv",
-]
-"wildlocate.core.data" = ["state_boundaries.geojson"]
-"wildlocate.gui" = ["map/index.html", "map/vendor/*"]
+"wildlocate" = ["bundled/*"]
+"wildlocate.core" = ["state_boundaries.geojson"]
+"wildlocate.gui" = ["map.html", "leaflet.css", "leaflet.js"]
 "wildlocate.web" = ["*.html", "*.css", "*.js"]

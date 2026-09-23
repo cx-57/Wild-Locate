@@ -3,6 +3,8 @@
 Massachusetts never enters this path. New regions train their own raster-only
 models; Massachusetts road/water distances are deliberately not substituted.
 """
+
+from dataclasses import dataclass
 from functools import lru_cache
 import json
 import math
@@ -18,11 +20,48 @@ from rasterio.windows import Window
 import requests
 from shapely.geometry import Point, shape
 
-from wildlocate.core.regions import get_region, region_root
-from wildlocate.core.environment_features import (
-    project_point, read_local_window, terrain_window_stats, fraction,
+from wildlocate.core.environment import (
+    fraction, project_point, read_local_window, terrain_window_stats,
     validate_point_is_evaluable,
 )
+@dataclass(frozen=True)
+class Region:
+    code: str
+    name: str
+    bbox: tuple
+    center: tuple
+    place_id: int
+    examples: tuple = ()
+
+
+REGIONS = {
+    'MA': Region('MA', 'Massachusetts', (-73.60, 41.10, -69.80, 42.95), (42.3718, -72.2820), 2),
+    'FL': Region('FL', 'Florida', (-87.70, 24.35, -79.85, 31.10), (28.1, -81.6), 21,
+                 ('Nine-banded Armadillo', 'Marsh Rabbit', 'Hispid Cotton Rat')),
+    'AZ': Region('AZ', 'Arizona', (-114.90, 31.20, -108.95, 37.10), (32.25, -110.9), 40,
+                 ('Collared Peccary', 'Black-tailed Jackrabbit', 'Desert Cottontail')),
+}
+
+
+def get_region(value='MA'):
+    if isinstance(value, Region):
+        value = value.code
+    key = str(value).strip().upper()
+    if key not in REGIONS:
+        key = next((r.code for r in REGIONS.values() if r.name.casefold() == str(value).casefold()), key)
+    if key not in REGIONS:
+        raise ValueError('Choose Massachusetts, Florida or Arizona.')
+    return REGIONS[key]
+
+
+def region_root(region='MA'):
+    from wildlocate.core.environment import get_user_data_dir
+    code = get_region(region).code
+    root = get_user_data_dir()
+    return root if code == 'MA' else root / 'regions' / code
+
+
+
 
 SCHEMA = 'regional-raster-v1'
 TILE_SIZE = 120000
@@ -135,7 +174,7 @@ def _download_elevation_tile(bbox, output_path, attempts=6):
 
 
 def tile_paths(region, x, y, progress=None):
-    from wildlocate.core.data.downloads import (
+    from wildlocate.core.environment import (
         download_tile, LANDCOVER_WCS, LANDCOVER_COVERAGE,
         IMPERVIOUS_WCS, IMPERVIOUS_COVERAGE,
     )

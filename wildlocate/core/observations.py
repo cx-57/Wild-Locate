@@ -1,29 +1,180 @@
-#!/usr/bin/env python3
+"""iNaturalist observations and target-group background sampling."""
 
-import argparse
+import re
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import requests
 from pyproj import Transformer
 
-from wildlocate.core.data.inaturalist import api_get, extract_observation_row, find_place_id, resolve_species, species_slug
+API_BASE = "https://api.inaturalist.org/v1"
+DEFAULT_MAX_OBSERVATIONS = 5000
+OBSERVATION_COLUMNS = [
+    "observation_id",
+    "observed_on",
+    "latitude",
+    "longitude",
+    "positional_accuracy",
+    "quality_grade",
+    "taxon_id",
+    "taxon_name",
+    "common_name",
+    "coordinates_obscured",
+    "uri",
+]
 
-MAMMAL_POOL_FILE = Path("data/processed/samples/massachusetts_mammal_pool.csv")
-DEFAULT_MAX_MAMMAL_POOL = 20000
+
+def species_slug(species_name):
+    slug = re.sub(r"[^a-z0-9]+", "_", species_name.strip().lower())
+    slug = slug.strip("_")
+    if not slug:
+        raise ValueError("Species name is required.")
+    return slug
 
 
-def download_mammal_pool(place_name="Massachusetts", progress=None):
-    mammals = {"taxon_id": 40151}
+def normalize_name(value):
+    if value is None:
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", value.strip().lower()).strip()
+
+
+def api_get(endpoint, params=None):
+    response = requests.get(f"{API_BASE}{endpoint}", params=params, timeout=60)
+    response.raise_for_status()
+    data = response.json()
+    if "error" in data:
+        raise RuntimeError(data["error"])
+    return data
+
+
+def find_place_id(place_name):
+    from wildlocate.core.regional import REGIONS
+    for region in REGIONS.values():
+        if str(place_name).casefold() in (region.name.casefold(), region.code.casefold()):
+            return region.place_id
+    place_name = place_name.strip()
+    if not place_name:
+        raise ValueError("Place name is required.")
+
+    data = api_get("/places/autocomplete", {"q": place_name, "per_page": 20})
+    results = data.get("results", [])
+    if not results:
+        raise RuntimeError(f"Could not find place: {place_name}")
+
+    normalized_query = normalize_name(place_name)
+    for result in results:
+        if normalized_query in {
+            normalize_name(result.get("display_name")),
+            normalize_name(result.get("name")),
+        }:
+            return int(result["id"])
+
+    return int(results[0]["id"])
+
+
+def resolve_species(species_name):
+    if species_name is None or not species_name.strip():
+        raise ValueError("Species name is required.")
+
+    normalized_query = normalize_name(species_name)
+    data = api_get("/taxa/autocomplete", {"q": species_name, "per_page": 20})
+    results = data.get("results", [])
+
+    if not results:
+        raise ValueError(
+            f"Could not find a species match for '{species_name}'. Please provide a clearer common or scientific name."
+        )
+
+    exact_matches = []
+    for taxon in results:
+        taxon_names = [
+            taxon.get("preferred_common_name"),
+            taxon.get("common_name"),
+            taxon.get("scientific_name"),
+            taxon.get("name"),
+        ]
+        if any(normalize_name(name) == normalized_query for name in taxon_names if name):
+            exact_matches.append(taxon)
+
+    if not exact_matches:
+        raise ValueError(
+            f"Could not find a reasonable species match for '{species_name}'. "
+            f"Try a more exact common or scientific name; available matches include: "
+            f"{', '.join(sorted({(item.get('preferred_common_name') or item.get('name') or 'Unknown') for item in results[:5]}))}."
+        )
+
+    chosen = exact_matches[0]
+    common_name = chosen.get("preferred_common_name") or chosen.get("common_name") or ""
+    scientific_name = chosen.get("scientific_name") or chosen.get("name") or ""
+
+    if not common_name or not scientific_name:
+        raise ValueError(
+            f"Could not resolve a usable common and scientific name for '{species_name}'."
+        )
+
+    return {
+        "taxon_id": int(chosen["id"]),
+        "scientific_name": scientific_name,
+        "common_name": common_name,
+        "rank": chosen.get("rank"),
+        "iconic_taxon_name": chosen.get("iconic_taxon_name"),
+    }
+
+
+def extract_observation_row(obs):
+    geojson = obs.get("geojson") or {}
+    coordinates = geojson.get("coordinates")
+    if not coordinates or len(coordinates) < 2:
+        return None
+
+    longitude, latitude = coordinates[:2]
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+    except (TypeError, ValueError):
+        return None
+
+    if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
+        return None
+
+    taxon = obs.get("taxon") or {}
+    common_name = taxon.get("preferred_common_name") or taxon.get("common_name") or ""
+    taxon_name = taxon.get("scientific_name") or taxon.get("name") or ""
+
+    return {
+        "observation_id": obs.get("id"),
+        "observed_on": obs.get("observed_on"),
+        "latitude": latitude,
+        "longitude": longitude,
+        "positional_accuracy": obs.get("positional_accuracy"),
+        "quality_grade": obs.get("quality_grade"),
+        "taxon_id": taxon.get("id"),
+        "taxon_name": taxon_name,
+        "common_name": common_name,
+        "coordinates_obscured": bool(obs.get("obscured", False)),
+        "uri": obs.get("uri"),
+    }
+
+
+def download_species_observations(
+    species_name,
+    place_name="Massachusetts",
+    max_observations=DEFAULT_MAX_OBSERVATIONS,
+    *, taxon_id=None, progress=None,
+):
+    taxon_id = taxon_id if taxon_id is not None else resolve_species(species_name)["taxon_id"]
     place_id = find_place_id(place_name)
+
+    if max_observations <= 0:
+        raise ValueError("max_observations must be greater than 0.")
 
     rows = []
     id_above = 0
-    total_rows = 0
 
-    while total_rows < DEFAULT_MAX_MAMMAL_POOL:
+    while len(rows) < max_observations:
         params = {
-            "taxon_id": mammals["taxon_id"],
+            "taxon_id": taxon_id,
             "place_id": place_id,
             "quality_grade": "research",
             "verifiable": "true",
@@ -40,65 +191,75 @@ def download_mammal_pool(place_name="Massachusetts", progress=None):
             break
 
         for obs in batch:
-            row = extract_observation_row(obs)
-            if row is None:
-                continue
-            rows.append({
-                key: row[key]
-                for key in (
-                    "observation_id", "taxon_id", "taxon_name", "common_name",
-                    "latitude", "longitude", "positional_accuracy", "observed_on",
-                    "coordinates_obscured",
-                )
-            })
-            total_rows += 1
-            if total_rows >= DEFAULT_MAX_MAMMAL_POOL:
+            if len(rows) >= max_observations:
                 break
+            row = extract_observation_row(obs)
+            if row is not None:
+                rows.append(row)
 
         if len(batch) < params["per_page"]:
             break
 
         id_above = batch[-1]["id"]
         if progress:
-            progress(f"Downloaded {total_rows:,} {place_name} background observations…")
+            progress(f"Downloaded {len(rows):,} observations…")
 
     if not rows:
-        raise RuntimeError(f"No usable {place_name} Mammalia observations were found.")
+        raise RuntimeError(
+            f"No research-grade, non-captive observations were found for {species_name} in {place_name}."
+        )
 
-    df = pd.DataFrame(rows)
-    df["observation_id"] = pd.to_numeric(df["observation_id"], errors="coerce")
-    df["taxon_id"] = pd.to_numeric(df["taxon_id"], errors="coerce")
-    df["positional_accuracy"] = pd.to_numeric(df["positional_accuracy"], errors="coerce")
-
-    return df
+    raw_df = pd.DataFrame(rows, columns=OBSERVATION_COLUMNS)
+    return raw_df
 
 
-def load_or_create_mammal_pool(refresh_pool=False, pool_file=None, progress=None, place_name="Massachusetts"):
-    pool_file = Path(pool_file) if pool_file is not None else MAMMAL_POOL_FILE
-    if pool_file.exists() and not refresh_pool:
-        pool_df = pd.read_csv(pool_file)
-        required_columns = {
-            "observation_id", "taxon_id", "taxon_name", "common_name",
-            "latitude", "longitude", "positional_accuracy", "observed_on",
-            "coordinates_obscured",
-        }
-        missing = required_columns.difference(pool_df.columns)
-        if missing:
-            raise ValueError(
-                f"Existing mammal pool at {pool_file} is missing required columns: {sorted(missing)}"
-            )
-        return pool_df
+def clean_species_observations(df):
+    if df is None or df.empty:
+        return pd.DataFrame(columns=OBSERVATION_COLUMNS)
 
-    pool_df = download_mammal_pool(place_name=place_name, progress=progress)
-    pool_file.parent.mkdir(parents=True, exist_ok=True)
-    pool_df.to_csv(pool_file, index=False)
-    return pool_df
+    cleaned = df.copy()
+
+    cleaned = cleaned.dropna(subset=["latitude", "longitude"]).copy()
+
+    cleaned["latitude"] = pd.to_numeric(cleaned["latitude"], errors="coerce")
+    cleaned["longitude"] = pd.to_numeric(cleaned["longitude"], errors="coerce")
+    cleaned = cleaned.dropna(subset=["latitude", "longitude"]).copy()
+
+    cleaned["coordinates_obscured"] = (
+        cleaned["coordinates_obscured"].fillna(False).astype(str).str.lower() == "true"
+    )
+    cleaned = cleaned[~cleaned["coordinates_obscured"]].copy()
+
+    cleaned["positional_accuracy"] = pd.to_numeric(cleaned["positional_accuracy"], errors="coerce")
+    cleaned = cleaned[
+        cleaned["positional_accuracy"].isna() | (cleaned["positional_accuracy"] <= 250)
+    ].copy()
+
+    cleaned = cleaned.drop_duplicates(subset=["observation_id"]).copy()
+    cleaned = cleaned.drop_duplicates(subset=["latitude", "longitude"]).copy()
+
+    cleaned = cleaned.loc[:, OBSERVATION_COLUMNS].reset_index(drop=True)
+    return cleaned
+
+
+def save_cleaned_observations(df, species_name, output_dir="data/processed/samples"):
+    output_path = Path(output_dir) / f"{species_slug(species_name)}_occurrences.csv"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(output_path, index=False)
+    return output_path
+
 
 
 TARGET_GROUPS = {
     "Mammalia": {"taxon_id": 40151, "label": "mammal"},
     "Reptilia": {"taxon_id": 26036, "label": "reptile"},
 }
+BACKGROUND_POOL_COLUMNS = (
+    "observation_id", "taxon_id", "taxon_name", "common_name",
+    "latitude", "longitude", "positional_accuracy", "observed_on",
+    "coordinates_obscured",
+)
+DEFAULT_MAX_BACKGROUND_POOL = 20000
 
 
 def target_group_label(target_group):
@@ -108,10 +269,10 @@ def target_group_label(target_group):
         raise ValueError(f"Unsupported target group: {target_group}") from exc
 
 
-def download_target_group_pool(target_group, place_name="Massachusetts", progress=None):
-    if target_group == "Mammalia":
-        return download_mammal_pool(place_name=place_name, progress=progress)
-
+def download_target_group_pool(
+    target_group, place_name="Massachusetts", progress=None,
+    max_observations=DEFAULT_MAX_BACKGROUND_POOL,
+):
     group = TARGET_GROUPS.get(target_group)
     if group is None:
         raise ValueError(f"Unsupported target group: {target_group}")
@@ -119,9 +280,8 @@ def download_target_group_pool(target_group, place_name="Massachusetts", progres
     place_id = find_place_id(place_name)
     rows = []
     id_above = 0
-    total_rows = 0
 
-    while total_rows < DEFAULT_MAX_MAMMAL_POOL:
+    while len(rows) < max_observations:
         params = {
             "taxon_id": group["taxon_id"],
             "place_id": place_id,
@@ -140,26 +300,19 @@ def download_target_group_pool(target_group, place_name="Massachusetts", progres
 
         for obs in batch:
             row = extract_observation_row(obs)
-            if row is None:
-                continue
-            rows.append({
-                key: row[key]
-                for key in (
-                    "observation_id", "taxon_id", "taxon_name", "common_name",
-                    "latitude", "longitude", "positional_accuracy", "observed_on",
-                    "coordinates_obscured",
-                )
-            })
-            total_rows += 1
-            if total_rows >= DEFAULT_MAX_MAMMAL_POOL:
-                break
+            if row is not None:
+                rows.append({key: row[key] for key in BACKGROUND_POOL_COLUMNS})
+                if len(rows) >= max_observations:
+                    break
 
         if len(batch) < params["per_page"]:
             break
-
         id_above = batch[-1]["id"]
         if progress:
-            progress(f"Downloaded {total_rows:,} {place_name} {group['label']} background observations…")
+            progress(
+                f"Downloaded {len(rows):,} {place_name} "
+                f"{group['label']} background observations…"
+            )
 
     if not rows:
         raise RuntimeError(
@@ -167,38 +320,29 @@ def download_target_group_pool(target_group, place_name="Massachusetts", progres
         )
 
     df = pd.DataFrame(rows)
-    df["observation_id"] = pd.to_numeric(df["observation_id"], errors="coerce")
-    df["taxon_id"] = pd.to_numeric(df["taxon_id"], errors="coerce")
-    df["positional_accuracy"] = pd.to_numeric(df["positional_accuracy"], errors="coerce")
+    for column in ("observation_id", "taxon_id", "positional_accuracy"):
+        df[column] = pd.to_numeric(df[column], errors="coerce")
     return df
 
 
 def load_or_create_target_group_pool(
-    target_group, refresh_pool=False, pool_file=None, progress=None, place_name="Massachusetts"
+    target_group, refresh_pool=False, pool_file=None, progress=None,
+    place_name="Massachusetts",
 ):
-    if target_group == "Mammalia":
-        return load_or_create_mammal_pool(
-            refresh_pool=refresh_pool,
-            pool_file=pool_file,
-            progress=progress,
-            place_name=place_name,
-        )
-
     label = target_group_label(target_group)
-    pool_file = Path(pool_file) if pool_file is not None else Path(
-        f"data/processed/samples/massachusetts_{label}_pool.csv"
-    )
+    if pool_file is None:
+        place_slug = re.sub(r"[^a-z0-9]+", "_", place_name.casefold()).strip("_")
+        pool_file = Path("data/processed/samples") / f"{place_slug}_{label}_pool.csv"
+    else:
+        pool_file = Path(pool_file)
+
     if pool_file.exists() and not refresh_pool:
         pool_df = pd.read_csv(pool_file)
-        required_columns = {
-            "observation_id", "taxon_id", "taxon_name", "common_name",
-            "latitude", "longitude", "positional_accuracy", "observed_on",
-            "coordinates_obscured",
-        }
-        missing = required_columns.difference(pool_df.columns)
+        missing = set(BACKGROUND_POOL_COLUMNS).difference(pool_df.columns)
         if missing:
             raise ValueError(
-                f"Existing {label} pool at {pool_file} is missing required columns: {sorted(missing)}"
+                f"Existing {label} pool at {pool_file} is missing required columns: "
+                f"{sorted(missing)}"
             )
         return pool_df
 
@@ -208,11 +352,6 @@ def load_or_create_target_group_pool(
     pool_file.parent.mkdir(parents=True, exist_ok=True)
     pool_df.to_csv(pool_file, index=False)
     return pool_df
-
-
-def filter_target_group_pool(pool_df, target_taxon_id):
-    return filter_mammal_pool(pool_df, target_taxon_id)
-
 
 def project_to_5070(df):
     transformer = Transformer.from_crs("EPSG:4326", "EPSG:5070", always_xy=True)
@@ -224,7 +363,7 @@ def project_to_5070(df):
     return projected
 
 
-def filter_mammal_pool(pool_df, target_taxon_id):
+def filter_target_group_pool(pool_df, target_taxon_id):
     if pool_df is None or pool_df.empty:
         return pool_df
 
@@ -398,36 +537,3 @@ def generate_background(
     training_df.to_csv(training_file, index=False)
 
     return sample_df
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Generate target-group background points for a species in Massachusetts.",
-    )
-    parser.add_argument("--species", required=True, help="Species name, e.g. 'Fisher'.")
-    parser.add_argument("--background-ratio", type=float, default=3.0)
-    parser.add_argument("--exclusion-distance-m", type=float, default=1000)
-    parser.add_argument("--thinning-distance-m", type=float, default=500)
-    parser.add_argument("--refresh-pool", action="store_true")
-    args = parser.parse_args()
-
-    load_or_create_mammal_pool(refresh_pool=args.refresh_pool)
-
-    background_df = generate_background(
-        args.species,
-        background_ratio=args.background_ratio,
-        exclusion_distance_m=args.exclusion_distance_m,
-        thinning_distance_m=args.thinning_distance_m,
-    )
-
-    species_slug_value = species_slug(args.species)
-    background_file = Path(f"data/processed/samples/{species_slug_value}_background.csv")
-    training_file = Path(f"data/processed/samples/{species_slug_value}_training_points.csv")
-
-    print(f"Background points saved to: {background_file}")
-    print(f"Training points saved to: {training_file}")
-    print(f"Background rows: {len(background_df)}")
-
-
-if __name__ == "__main__":
-    main()

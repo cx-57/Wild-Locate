@@ -9,7 +9,7 @@ import traceback
 
 def run_prediction(account=None):
     with redirect_stdout(sys.stderr):
-        from wildlocate.core.service import PredictionError, assess_habitat
+        from wildlocate.core.predict import PredictionError, assess_habitat
 
     for line in sys.stdin:
         try:
@@ -38,7 +38,7 @@ def run_prediction(account=None):
 def run_training(job_id, region, account):
     from requests.exceptions import RequestException
     from wildlocate.core.registry import cleanup_job
-    from wildlocate.core.training import TrainingSession
+    from wildlocate.core.modeling import TrainingSession
 
     output = sys.stdout
 
