@@ -87,7 +87,7 @@ def species_suggestions(query, place_name, limit=3):
     data = api_get("/taxa/autocomplete", {"q": query, "per_page": 30})
     candidates = []
 
-    for taxon in data.get("results", []):
+    for taxon in data.get("results", [])[:12]:
         if taxon.get("rank") != "species":
             continue
         if taxon.get("iconic_taxon_name") not in {"Mammalia", "Reptilia"}:
