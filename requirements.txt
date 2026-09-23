@@ -1,9 +1,0 @@
-geopandas
-joblib
-numpy
-pandas
-pyproj
-rasterio
-requests
-scikit-learn
-shapely

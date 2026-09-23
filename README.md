@@ -1,143 +1,135 @@
-﻿# WildLocate
+# Wild-Locate
 
-## Installation
+Wild-Locate is a desktop habitat-suitability explorer. It combines public wildlife observations, environmental data, and species-specific machine-learning models to score individual locations or a sampled region around a selected point.
 
-Install WildLocate
-
-```pip install wildlocate```
-
-Download Base Sets
-
-```wildlocate init```
-
-Start UI
-
-```wildlocate```
-
-## Installation From Source
-
-Clone
-
-```git clone https://github.com/cx-57/Wild-Locate```
-
-Create Virtual Environment
-
-```python -m venv .venv```
-
-Install WildLocate (Installs Deps)
-
-```pip install -e .```
-
-Setup & Run
-
-Download Datasets
-
-```wildlocate init```
-
-Launch
-
-```wildlocate```
-
-## Train a species in the desktop app
-
-Open **Manage species → Train a new species**. Enter an exact common or scientific
-name, select **Find species**, and confirm the matched mammal. The app checks local
-environmental datasets and downloads research-grade observations from iNaturalist.
-If environmental data is missing, use **Download environmental data**, then check
-the species again.
-
-After cleaning, at least 25 observations are required to attempt training; their
-spatial distribution and the available background samples can still prevent valid
-five-fold evaluation. Select **Start training** to prepare background locations,
-extract habitat features, compare models and fit the selected model. Downloads
-require internet access. Training runs in a separate process, reports progress and
-can be cancelled.
-
-Completed models appear under **Your models**. Review the observation counts and
-spatial validation results, then select **Enable model** to add the species to the
-analysis dropdown. Validation scores are not probabilities of wildlife presence
-or a guarantee of ecological reliability. Retraining creates a separate model;
-the current model stays enabled until a replacement is explicitly enabled.
-Custom models can be deleted, and bundled models can be re-enabled at any time.
-
-Custom models, training files and enabled-model selections are stored separately
-for each signed-in WildLocate account under `accounts/<account-id>` in the
-`wildlocate` application-data directory. Bundled example models remain available
-to every account. Environmental datasets and the background-observation cache
-are shared. `WILDLOCATE_DATA_DIR` optionally overrides the application-data
-directory. Completed models must include their model, metadata and comparison
-dataset before they can be enabled.
-
-The API and command-line predictions have no account sign-in and expose only
-bundled models. Previously shared custom models have no recorded owner: their
-files are preserved, but they are no longer listed or enabled for any account.
-Sign in and retrain a species to save a model to your account.
-
-Massachusetts uses the original habitat features. Experimental Florida and Arizona
-mammal support is described below; other regions and animal groups remain unsupported.
-
-## Tests
-
-```powershell
-python -m unittest discover -s tests -v
-```
-
-Tests use isolated storage under `artifacts/test-runs`, mock external downloads,
-train and reload a real model, and exercise the desktop workflow and regional
-pipeline. Live regional smoke tests and pilot workflows are manual-only.
-
-## Florida and Arizona (experimental)
-
-Use the **State** selector at the top of the desktop app. Massachusetts remains
-selected by default and retains its existing datasets, predictors and bundled
-models. Florida and Arizona have separate model selections and comparison
-populations; a model from one state is never used to score another state.
-
-Open **Manage species** after selecting a state to train a mammal there. Models
-must finish five-fold spatial evaluation and be enabled under **Your models**.
-The original minimum of 25 cleaned observations and 3:1 background target remain
-unchanged. Suggested starting species include Marsh Rabbit in Florida and
-Black-tailed Jackrabbit in Arizona. A new state with no enabled model shows an
-empty-state message rather than borrowing a Massachusetts model.
-
-The experimental states use a separate `regional-raster-v1` feature schema:
-forest, wetland, developed land, open water, shrubland, grassland, bare ground and
-agricultural land fractions at 250 m and 1 km; impervious surface at both radii;
-elevation, slope at both radii, and terrain ruggedness at 1 km. They do not use
-Massachusetts road or hydrography distances. These models are exploratory and
-have not established ecological reliability across either state.
-
-National rasters download on demand in reusable 120 km tiles with a 1.2 km margin.
-NLCD data is requested at 30 m and elevation at 90 m. First-time training or
-analysis requires internet access and can download substantial data. Subsequent
-locations in cached tiles work offline. Downloads publish only validated,
-complete GeoTIFFs; interrupted or corrupt tiles are downloaded again. Regional
-files are stored below the application-data directory in `regions/FL` and
-`regions/AZ`. Existing Massachusetts files are not moved or overwritten.
+## Quick start
 
 ```bash
-pip install wildlocate
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
 wildlocate init
 wildlocate
 ```
 
-`wildlocate init` downloads the Massachusetts environmental datasets and requires internet access. Use `wildlocate status` to check dataset availability.
+`wildlocate init` downloads the Massachusetts environmental datasets. Florida and Arizona use experimental raster-only models and download reusable tiles on demand.
 
-### From source
+## What the application does
 
-```bash
-python scripts/train_region_pilot.py --region FL --species "Marsh Rabbit" --observations 400
-python scripts/train_region_pilot.py --region AZ --species "Black-tailed Jackrabbit" --observations 400
+- **Point analysis:** extracts environmental conditions at one coordinate, scores the enabled species model, and reports a relative suitability percentile.
+- **Regional analysis:** samples 81 locations inside a 10, 25, or 50 km radius and maps the score at each evaluable grid point. This is sampled coverage, not a continuous raster.
+- **Habitat insights:** compares the selected point with the model's reference feature distribution and runs small exploratory feature-change scenarios. These are sensitivity checks, not causal ecological intervention estimates.
+- **Species training:** downloads research-grade iNaturalist observations, builds target-group background samples, extracts predictors, evaluates candidate models with spatial cross-validation, and saves account-specific models for review and activation.
+
+## Runtime architecture
+
+```text
+wildlocate/
+├── cli.py
+├── core/
+│   ├── accounts.py
+│   ├── dataset.py
+│   ├── environment_features.py
+│   ├── modeling.py
+│   ├── predict.py
+│   ├── regions.py
+│   ├── registry.py
+│   ├── service.py
+│   ├── training.py
+│   ├── worker.py
+│   └── data/
+│       ├── background.py
+│       ├── downloads.py
+│       ├── environment.py
+│       ├── inaturalist.py
+│       └── regional.py
+└── gui/
+    ├── app.py
+    ├── components.py
+    ├── dialogs.py
+    ├── location_map.py
+    ├── workers.py
+    └── map/index.html
 ```
 
-Pilot sampling is limited to the requested observation count; this is a
-development sample, not a representative survey. Review the saved observation
-counts and spatial-validation results before enabling a model.
+## Prediction flow
 
-Sources: [USGS/MRLC national land-cover services](https://www.mrlc.gov/data-services-page),
-[USGS 3DEP elevation service](https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer),
-[Census TIGERweb state boundaries](https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/0),
-and [iNaturalist API](https://api.inaturalist.org/v1/docs/).
-The bundled Florida/Arizona boundary geometry was retrieved from Census TIGERweb
-on 2026-09-12. State IDs are fixed explicitly (MA: 2, FL: 21, AZ: 40) to avoid
-ambiguous place-name search results.
+1. The GUI sends species, coordinates, state, and optional radius to `PredictionClient`.
+2. `core.worker` runs raster/model work in a separate Python process so the GUI remains responsive.
+3. `service.assess_habitat` validates the request and selects point or regional analysis.
+4. `predict.py` resolves the active model, extracts the predictor schema expected by that model, calls `predict_proba`, and converts the score to a percentile relative to the saved comparison dataset.
+5. The result returns as JSON to the GUI. Regional results are plotted as colored Leaflet markers.
+
+## Environmental predictors
+
+Massachusetts models use NLCD forest, wetland, developed land, open water, impervious surface, USGS elevation/slope/ruggedness, distance to MassDEP water, and distance to MassDOT roads. Florida and Arizona use a separate `regional-raster-v1` schema with national raster features and no Massachusetts-only road/water-distance predictors.
+
+## Training flow
+
+```text
+iNaturalist occurrences
+        ↓ clean / de-duplicate / accuracy filter
+target-group background locations
+        ↓ exclusion + spatial thinning
+environmental feature table
+        ↓ spatial grouped 5-fold CV
+Logistic Regression / Random Forest / XGBoost
+        ↓ select by PR-AUC, then ROC-AUC, then complexity
+final fitted model + metrics + comparison feature table
+```
+
+Coordinates and labels are excluded from predictors. The saved comparison feature table is retained because runtime percentiles and insight references are computed against it.
+
+## Bundled Massachusetts models
+
+The repository bundles Bobcat, Coyote, Fisher, North American River Otter, and Red Fox models. Bundled models are discovered from their metadata files rather than a second hard-coded species list.
+
+## Interpretation
+
+A model score is **relative habitat suitability**, not the probability that the species is currently present. Percentiles compare one score with that species model's saved comparison locations. Regional analysis is a sampled grid. Scenario outputs are exploratory model sensitivity comparisons and should not be presented as proven ecological effects.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+## Main data sources
+
+- iNaturalist API — occurrence observations
+- USGS/MRLC — NLCD land cover and impervious surface
+- USGS 3DEP — elevation
+- MassDEP — Massachusetts hydrography
+- MassDOT — Massachusetts roads
+- Census TIGERweb — bundled Florida/Arizona state boundary geometry
+
+## Third-party notice: Leaflet
+
+The map vendors Leaflet 1.9.4 under the BSD 2-Clause License:
+
+BSD 2-Clause License
+
+Copyright (c) 2010-2023, Volodymyr Agafonkin
+Copyright (c) 2010-2011, CloudMade
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

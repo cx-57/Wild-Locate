@@ -11,7 +11,6 @@ import uuid
 
 import wildlocate
 from wildlocate.core.accounts import account_data_dir, normalize_username
-from wildlocate.core.catalog import SUPPORTED_SPECIES
 from wildlocate.core.regions import get_region
 
 BUNDLED_DATA = Path(wildlocate.__file__).resolve().parent / "data" / "processed"
@@ -104,13 +103,24 @@ def custom_record(identifier, *, username=None):
 def list_models(region="MA", *, username=None):
     region = get_region(region).code
     records = []
-    for name in SUPPORTED_SPECIES:
-        slug = name.lower().replace(" ", "_")
-        record = ModelRecord(f"bundled:{slug}", name, BUNDLED_DATA / "models" / f"{slug}.joblib",
-                             BUNDLED_DATA / "models" / f"{slug}_metrics.json",
-                             BUNDLED_DATA / "features" / "species" / f"{slug}_features.csv")
-        if complete(record):
-            records.append(record)
+    for metrics_path in sorted((BUNDLED_DATA / "models").glob("*_metrics.json")):
+        try:
+            metadata = json.loads(metrics_path.read_text(encoding="utf-8"))
+            name = metadata["species"]
+            slug = metrics_path.name.removesuffix("_metrics.json")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            record = ModelRecord(
+                f"bundled:{slug}",
+                name,
+                BUNDLED_DATA / "models" / f"{slug}.joblib",
+                metrics_path,
+                BUNDLED_DATA / "features" / "species" / f"{slug}_features.csv",
+            )
+            if complete(record):
+                records.append(record)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
     if username is not None and custom_root(username).exists():
         for folder in sorted(custom_root(username).iterdir()):
             try:
