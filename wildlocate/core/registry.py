@@ -1,13 +1,21 @@
 """Local accounts plus bundled and account-owned model registry."""
 
+import csv
+from dataclasses import dataclass
 import hashlib
 import hmac
+import json
 import os
+from pathlib import Path
+import re
+import shutil
 import sqlite3
+import uuid
+
+import wildlocate
 
 from wildlocate.core.environment import get_user_data_dir
-
-
+from wildlocate.core.regional import get_region
 def connect():
     folder = get_user_data_dir() / 'accounts'
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -63,17 +71,7 @@ def authenticate(username, password, create=False):
         db.close()
     return username
 
-import csv
-from dataclasses import dataclass
-import json
-import os
-from pathlib import Path
-import re
-import shutil
-import uuid
 
-import wildlocate
-from wildlocate.core.regional import get_region
 
 BUNDLED_DATA = Path(wildlocate.__file__).resolve().parent / "data" / "processed"
 
