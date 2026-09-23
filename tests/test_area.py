@@ -100,27 +100,27 @@ class AreaTests(unittest.TestCase):
     def test_other_states_use_the_selected_states_extractor(self):
         area = self.setup_prediction(lambda *_: self.fail('MA extractor used for another state'))
         model, metrics = area.load_model_and_metadata(None)
-        from wildlocate.core.data.regional import SCHEMA
+        from wildlocate.core.regional import SCHEMA
         for region in ('FL', 'AZ'):
             metadata = dict(metrics, region=region, feature_schema=SCHEMA)
             def extract(lat, lon, selected):
                 self.assertEqual(selected, region)
                 return {'habitat': lat / 90}
-            with patch.object(area, 'load_model_and_metadata', return_value=(model, metadata)), patch('wildlocate.core.data.regional.extract_regional_features', side_effect=extract):
+            with patch.object(area, 'load_model_and_metadata', return_value=(model, metadata)), patch('wildlocate.core.regional.extract_regional_features', side_effect=extract):
                 result = area.predict_area('Bobcat', 28, -81, 10, region)
                 self.assertEqual(result['region'], region)
                 self.assertEqual(result['evaluated_points'], 81)
 
     def test_service_rejects_radius_before_prediction(self):
-        from wildlocate.core.service import assess_habitat, PredictionError
-        with patch('wildlocate.core.service.available_species', return_value=['Bobcat']):
+        from wildlocate.core.predict import assess_habitat, PredictionError
+        with patch('wildlocate.core.predict.available_species', return_value=['Bobcat']):
             with self.assertRaises(PredictionError) as error:
                 assess_habitat('Bobcat', 42, -72, radius_km=100)
             self.assertEqual(error.exception.code, 'invalid_radius')
 
     def test_existing_point_request_still_uses_point_prediction(self):
-        from wildlocate.core.service import assess_habitat
-        with patch('wildlocate.core.service.available_species', return_value=['Bobcat']), patch('wildlocate.core.service.predict_species', return_value={'features': {}, 'score': 0.5}):
+        from wildlocate.core.predict import assess_habitat
+        with patch('wildlocate.core.predict.available_species', return_value=['Bobcat']), patch('wildlocate.core.predict.predict_species', return_value={'features': {}, 'score': 0.5}):
             self.assertEqual(assess_habitat('bobcat', 42, -72)['score'], 0.5)
 
 
