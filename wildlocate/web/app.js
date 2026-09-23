@@ -1,71 +1,376 @@
 'use strict';
+
 const $ = id => document.getElementById(id);
-let config, token, regional = true, busy = false, activeJob = null, result = null;
-let revision = 0, started = 0, elapsedTimer = null;
-let map = null, overlay = null;
+
+let config = null;
+let token = null;
+let regional = true;
+let busy = false;
+let activeJob = null;
+let result = null;
+let revision = 0;
+let started = 0;
+let elapsedTimer = null;
+let map = null;
+let overlay = null;
+let authCreate = false;
+
+let managerRegion = 'MA';
+let modelRecords = [];
+let selectedModelId = null;
+let trainingJobId = null;
+let trainingState = null;
+let trainingRevision = 0;
+let resolvedTaxon = null;
+let handledCompletionId = null;
+
 const colors = ['#b5423a', '#d88735', '#d5bb45', '#80a952', '#286648'];
 const number = value => Number.isFinite(value) ? value.toFixed(3) : '—';
-const coords = (lat, lon) => `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'} / ${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
+const coords = (lat, lon) =>
+  `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'} / ${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
 
-function error(message) { $('error').textContent = message; $('error').hidden = !message; }
-function selection() {
-  if (!$('latitude').value.trim() || !$('longitude').value.trim()) throw Error('Enter both latitude and longitude.');
-  const latitude = Number($('latitude').value), longitude = Number($('longitude').value);
-  if (!Number.isFinite(latitude) || Math.abs(latitude) > 90 || !Number.isFinite(longitude) || Math.abs(longitude) > 180) throw Error('Latitude must be −90 to 90; longitude must be −180 to 180.');
-  if (!$('species').value) throw Error('No bundled models are available for this state.');
-  return {species: $('species').value, region: $('region').value, latitude, longitude, ...(regional ? {radius_km: Number($('radius').value)} : {})};
+function error(message) {
+  $('error').textContent = message || '';
+  $('error').hidden = !message;
 }
+
+function authError(message) {
+  $('auth-error').textContent = message || '';
+  $('auth-error').hidden = !message;
+}
+
+async function api(path, payload, method = payload === undefined ? 'GET' : 'POST') {
+  const options = {method};
+  if (method !== 'GET') {
+    options.headers = {
+      'Content-Type': 'application/json',
+      'X-Wildlocate-Token': token || '',
+    };
+    options.body = JSON.stringify(payload || {});
+  }
+  const response = await fetch(path, options);
+  let data = {};
+  try {
+    data = await response.json();
+  } catch (_) {
+    data = {};
+  }
+  if (!response.ok) {
+    const failure = Error(data.error || 'Could not contact the local server.');
+    failure.status = response.status;
+    throw failure;
+  }
+  return data;
+}
+
+function showAuth() {
+  $('app-shell').hidden = true;
+  $('auth-screen').hidden = false;
+  $('auth-password').value = '';
+  $('auth-confirm').value = '';
+  authError('');
+  setTimeout(() => $('auth-username').focus(), 0);
+}
+
+function setAuthMode(create) {
+  authCreate = create;
+  $('auth-title').textContent = create ? 'Create your account.' : 'Welcome back.';
+  $('auth-copy').textContent = create
+    ? 'Create a local account for your trained species models and habitat work.'
+    : 'Sign in to explore habitat and access the species models saved to your account.';
+  $('confirm-wrap').hidden = !create;
+  $('auth-confirm').required = create;
+  $('auth-submit').firstChild.textContent = create ? 'Create account ' : 'Sign in ';
+  $('auth-switch').textContent = create
+    ? 'Already have an account? Sign in'
+    : 'New here? Create an account';
+  $('auth-password').value = '';
+  $('auth-confirm').value = '';
+  authError('');
+}
+
+$('auth-switch').addEventListener('click', () => setAuthMode(!authCreate));
+
+$('auth-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const username = $('auth-username').value.trim();
+  const password = $('auth-password').value;
+  if (authCreate && password !== $('auth-confirm').value) {
+    authError('Your passwords don’t match.');
+    return;
+  }
+  $('auth-submit').disabled = true;
+  authError('');
+  try {
+    const data = await api('/api/auth/login', {
+      username,
+      password,
+      create: authCreate,
+    });
+    config = data;
+    token = data.token;
+    enterApp(false);
+  } catch (exc) {
+    authError(exc.message);
+  } finally {
+    $('auth-submit').disabled = false;
+  }
+});
+
+$('sign-out').addEventListener('click', async () => {
+  try {
+    const data = await api('/api/auth/logout', {});
+    config = data;
+    token = data.token;
+  } catch (_) {
+    // The server may already have reset. Either way return to the sign-in screen.
+  }
+  activeJob = null;
+  result = null;
+  if ($('species-dialog').open) $('species-dialog').close();
+  setAuthMode(false);
+  showAuth();
+});
+
+function initMap() {
+  if (map || !window.L) {
+    if (!window.L) {
+      $('map-status').hidden = false;
+      $('map-status').textContent = 'Map unavailable. You can still enter coordinates manually.';
+      document.querySelector('.manual').open = true;
+    }
+    return;
+  }
+
+  map = L.map('map', {scrollWheelZoom: false, minZoom: 3, maxZoom: 18})
+    .setView([42.37, -72.28], 9);
+  overlay = L.layerGroup().addTo(map);
+
+  let fallbackStarted = false;
+  let primaryErrors = 0;
+  const showMapFailure = message => {
+    $('map-status').hidden = false;
+    $('map-status').textContent = message;
+  };
+
+  const fallback = () => {
+    if (fallbackStarted) return;
+    fallbackStarted = true;
+    if (map.hasLayer(primary)) map.removeLayer(primary);
+    const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      noWrap: true,
+      attribution: '&copy; OpenStreetMap contributors',
+    });
+    osm.on('tileerror', () => {
+      showMapFailure('Map tiles are unavailable. Manual coordinates and habitat analysis still work.');
+    });
+    osm.addTo(map);
+    showMapFailure('Primary map tiles were blocked, so Wild-Locate switched to its OpenStreetMap fallback.');
+  };
+
+  const primary = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    {
+      subdomains: 'abcd',
+      maxZoom: 18,
+      noWrap: true,
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    }
+  );
+  primary.on('tileerror', () => {
+    primaryErrors += 1;
+    if (primaryErrors >= 2) fallback();
+  });
+  primary.on('load', () => {
+    if (!fallbackStarted) $('map-status').hidden = true;
+  });
+  primary.addTo(map);
+
+  map.on('click', event => {
+    if (busy) return;
+    $('latitude').value = event.latlng.lat.toFixed(6);
+    $('longitude').value = event.latlng.wrap().lng.toFixed(6);
+    changed();
+  });
+
+  new ResizeObserver(() => map.invalidateSize({pan: false})).observe($('map'));
+}
+
+function enterApp(preserveSelection = false) {
+  if (!config || !config.authenticated) {
+    showAuth();
+    return;
+  }
+  $('auth-screen').hidden = true;
+  $('app-shell').hidden = false;
+  $('account-name').textContent = config.username;
+  initMap();
+  applyConfig(config, preserveSelection);
+  setTimeout(() => map && map.invalidateSize({pan: false}), 0);
+}
+
+function applyConfig(data, preserveSelection = true) {
+  const previousRegion = preserveSelection ? $('region').value : '';
+  const previousSpecies = preserveSelection ? $('species').value : '';
+  config = data;
+  token = data.token;
+  $('account-name').textContent = data.username || '';
+
+  $('region').replaceChildren(
+    ...data.regions.map(state => new Option(state.name, state.code))
+  );
+  if (previousRegion && data.regions.some(state => state.code === previousRegion)) {
+    $('region').value = previousRegion;
+  } else if (data.regions.some(state => state.code === 'MA')) {
+    $('region').value = 'MA';
+  }
+  $('inputs').disabled = false;
+  changeRegion(!preserveSelection, previousSpecies);
+}
+
+async function refreshConfig(preserveSelection = true) {
+  const data = await api('/api/config');
+  if (!data.authenticated) {
+    config = data;
+    token = data.token;
+    showAuth();
+    return;
+  }
+  applyConfig(data, preserveSelection);
+}
+
+function selection() {
+  if (!$('latitude').value.trim() || !$('longitude').value.trim()) {
+    throw Error('Enter both latitude and longitude.');
+  }
+  const latitude = Number($('latitude').value);
+  const longitude = Number($('longitude').value);
+  if (
+    !Number.isFinite(latitude) || Math.abs(latitude) > 90 ||
+    !Number.isFinite(longitude) || Math.abs(longitude) > 180
+  ) {
+    throw Error('Latitude must be −90 to 90; longitude must be −180 to 180.');
+  }
+  if (!$('species').value) {
+    throw Error('No enabled model is available for this state. Open Manage species.');
+  }
+  return {
+    species: $('species').value,
+    region: $('region').value,
+    latitude,
+    longitude,
+    ...(regional ? {radius_km: Number($('radius').value)} : {}),
+  };
+}
+
 function setBusy(value) {
   busy = value;
   document.body.classList.toggle('busy', value);
   $('inputs').disabled = value || !config;
+  $('manage-species').disabled = value;
   $('analyze').disabled = value || !$('species').value;
   $('cancel').hidden = !value;
   $('cancel').disabled = !activeJob;
+
   if (elapsedTimer) clearInterval(elapsedTimer);
   elapsedTimer = null;
   if (value) {
     started = Date.now();
-    const update = () => { $('status').textContent = `Analyzing habitat · ${Math.floor((Date.now() - started) / 1000)}s`; };
-    update(); elapsedTimer = setInterval(update, 1000);
+    const update = () => {
+      $('status').textContent =
+        `Analyzing habitat · ${Math.floor((Date.now() - started) / 1000)}s`;
+    };
+    update();
+    elapsedTimer = setInterval(update, 1000);
   }
 }
+
 function clearResult() {
-  revision++;
+  revision += 1;
   result = null;
-  $('result').hidden = true; $('empty').hidden = false;
-  $('scores').open = false; $('conditions').open = false;
+  $('result').hidden = true;
+  $('empty').hidden = false;
+  $('scores').open = false;
+  $('conditions').open = false;
   error('');
 }
+
 function draw(recenter = false) {
-  const lat = Number($('latitude').value), lon = Number($('longitude').value);
-  const valid = $('latitude').value.trim() && $('longitude').value.trim() && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+  const lat = Number($('latitude').value);
+  const lon = Number($('longitude').value);
+  const valid =
+    $('latitude').value.trim() &&
+    $('longitude').value.trim() &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lon) <= 180;
+
   $('selected-location').textContent = valid ? coords(lat, lon) : 'Enter valid coordinates';
   if (!map) return;
   overlay.clearLayers();
   if (!valid || Math.abs(lat) > 85) return;
+
   const center = [lat, lon];
   if (regional) {
-    const circle = L.circle(center, {radius: Number($('radius').value) * 1000, color: '#315b48', weight: 1.4, fillOpacity: .025, interactive: false}).addTo(overlay);
-    if (recenter) map.fitBounds(circle.getBounds(), {padding: [24, 24], animate: false});
-  } else if (recenter) map.setView(center, 11, {animate: false});
+    const circle = L.circle(center, {
+      radius: Number($('radius').value) * 1000,
+      color: '#315b48',
+      weight: 1.4,
+      fillOpacity: 0.025,
+      interactive: false,
+    }).addTo(overlay);
+    if (recenter) {
+      map.fitBounds(circle.getBounds(), {padding: [24, 24], animate: false});
+    }
+  } else if (recenter) {
+    map.setView(center, 11, {animate: false});
+  }
+
   const points = result ? (result.points || [{...result, status: 'ok'}]) : [];
   if (!points.length) {
-    L.marker(center, {icon: L.divIcon({className: 'center-pin', iconSize: [15, 15], iconAnchor: [7.5, 7.5]})}).addTo(overlay);
+    L.marker(center, {
+      icon: L.divIcon({
+        className: 'center-pin',
+        iconSize: [15, 15],
+        iconAnchor: [7.5, 7.5],
+      }),
+    }).addTo(overlay);
   }
+
   for (const point of points) {
     const ok = point.status === 'ok';
-    const color = ok ? colors[Math.min(4, Math.floor(point.percentile / 20))] : '#858585';
-    const content = document.createElement('div');
-    content.textContent = `${coords(point.latitude, point.longitude)} — ${ok ? `${point.category} · score ${number(point.score)} · percentile ${point.percentile}` : 'Unavailable: outside coverage or incomplete data'}`;
-    L.circleMarker([point.latitude, point.longitude], {radius: regional ? 4 : 7, color, weight: .6, fillColor: color, fillOpacity: .85, bubblingMouseEvents: false}).bindPopup(content).addTo(overlay);
+    const percentile = Number(point.percentile);
+    const color = ok && Number.isFinite(percentile)
+      ? colors[Math.min(4, Math.max(0, Math.floor(percentile / 20)))]
+      : '#858585';
+    const popup = document.createElement('div');
+    popup.textContent =
+      `${coords(point.latitude, point.longitude)} — ` +
+      (ok
+        ? `${point.category} · score ${number(point.score)} · percentile ${point.percentile}`
+        : 'Unavailable: outside coverage or incomplete data');
+    L.circleMarker([point.latitude, point.longitude], {
+      radius: regional ? 4 : 7,
+      color,
+      weight: 0.6,
+      fillColor: color,
+      fillOpacity: 0.85,
+      bubblingMouseEvents: false,
+    }).bindPopup(popup).addTo(overlay);
   }
 }
+
 function changed(recenter = false) {
   if (busy) return;
-  clearResult(); draw(recenter);
-  $('status').textContent = $('species').value ? 'Ready to explore.' : 'Choose a state with bundled models.';
+  clearResult();
+  draw(recenter);
+  $('status').textContent = $('species').value
+    ? 'Ready to explore.'
+    : 'No enabled model for this state. Open Manage species.';
 }
+
 function mode(value) {
   if (busy) return;
   regional = value;
@@ -74,40 +379,54 @@ function mode(value) {
   $('radius-field').hidden = !value;
   changed(true);
 }
-function changeRegion() {
-  const state = config.regions.find(r => r.code === $('region').value);
+
+function changeRegion(resetLocation = true, preferredSpecies = '') {
+  if (!config) return;
+  const state = config.regions.find(item => item.code === $('region').value);
+  if (!state) return;
+
+  const currentSpecies = preferredSpecies || $('species').value;
   $('species').replaceChildren(...state.species.map(name => new Option(name, name)));
-  if (state.species.includes('Bobcat')) $('species').value = 'Bobcat';
-  $('latitude').value = state.center[0]; $('longitude').value = state.center[1];
-  $('species-note').textContent = state.species.length ? `${state.species.length} bundled species models available.` : 'No bundled models for this state. Custom models can be used in the desktop app.';
-  $('analyze').disabled = !state.species.length;
-  changed(true);
-}
-async function api(path, payload) {
-  const response = await fetch(path, payload === undefined ? {} : {
-    method: 'POST', headers: {'Content-Type': 'application/json', 'X-Wildlocate-Token': token}, body: JSON.stringify(payload)
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    const failure = Error(data.error || 'Could not contact the local server.');
-    failure.status = response.status;
-    throw failure;
+  if (state.species.includes(currentSpecies)) {
+    $('species').value = currentSpecies;
+  } else if (state.species.includes('Bobcat')) {
+    $('species').value = 'Bobcat';
   }
-  return data;
+
+  if (resetLocation) {
+    $('latitude').value = state.center[0];
+    $('longitude').value = state.center[1];
+  }
+
+  $('species-note').textContent = state.species.length
+    ? `${state.species.length} enabled species model${state.species.length === 1 ? '' : 's'} available.`
+    : 'No enabled model for this state. Train or enable one in Manage species.';
+  $('analyze').disabled = !state.species.length;
+  changed(resetLocation);
 }
+
 function metric(value, title) {
-  const box = document.createElement('div'); box.className = 'metric';
-  const strong = document.createElement('strong'); strong.textContent = value;
-  const caption = document.createElement('span'); caption.textContent = title;
-  box.append(strong, caption); $('metrics').append(box);
+  const box = document.createElement('div');
+  box.className = 'metric';
+  const strong = document.createElement('strong');
+  strong.textContent = value;
+  const caption = document.createElement('span');
+  caption.textContent = title;
+  box.append(strong, caption);
+  $('metrics').append(box);
 }
+
 function showResult(data) {
   result = data;
   const area = data.analysis_type === 'regional';
-  $('empty').hidden = true; $('result').hidden = false;
+  $('empty').hidden = true;
+  $('result').hidden = false;
   $('result-kind').textContent = area ? 'REGIONAL ASSESSMENT' : 'POINT ASSESSMENT';
-  $('result-title').textContent = area ? `${data.species} · ${data.radius_km} km radius` : data.species;
+  $('result-title').textContent = area
+    ? `${data.species} · ${data.radius_km} km radius`
+    : data.species;
   $('metrics').replaceChildren();
+
   if (area) {
     metric(number(data.mean_score), 'Mean suitability score');
     metric(String(data.evaluated_points), 'Points scored');
@@ -118,68 +437,121 @@ function showResult(data) {
     metric(String(data.percentile), 'Percentile');
     metric(data.category, 'Habitat suitability');
   }
-  $('result-note').textContent = `${data.model} · ${data.training_observations.toLocaleString()} training observations` + (area && !data.evaluated_points ? ' · No grid points could be evaluated. Try another location or a smaller radius.' : '');
-  $('scores').hidden = !area; $('conditions').hidden = area;
-  $('score-rows').replaceChildren(); $('feature-values').replaceChildren();
+
+  $('result-note').textContent =
+    `${data.model} · ${Number(data.training_observations || 0).toLocaleString()} training observations` +
+    (area && !data.evaluated_points
+      ? ' · No grid points could be evaluated. Try another location or a smaller radius.'
+      : '');
+
+  $('scores').hidden = !area;
+  $('conditions').hidden = area;
+  $('score-rows').replaceChildren();
+  $('feature-values').replaceChildren();
+
   for (const point of data.points || []) {
-    const tr = document.createElement('tr'), ok = point.status === 'ok';
-    for (const value of [coords(point.latitude, point.longitude), ok ? number(point.score) : '—', ok ? String(point.percentile) : '—', ok ? point.category : 'Unavailable']) {
-      const td = document.createElement('td'); td.textContent = value; tr.append(td);
+    const tr = document.createElement('tr');
+    const ok = point.status === 'ok';
+    for (const value of [
+      coords(point.latitude, point.longitude),
+      ok ? number(point.score) : '—',
+      ok ? String(point.percentile) : '—',
+      ok ? point.category : 'Unavailable',
+    ]) {
+      const td = document.createElement('td');
+      td.textContent = value;
+      tr.append(td);
     }
     $('score-rows').append(tr);
   }
+
   for (const [name, value] of Object.entries(data.features || {})) {
-    const term = document.createElement('dt'), detail = document.createElement('dd');
-    term.textContent = name.replaceAll('_', ' '); detail.textContent = number(value);
+    const term = document.createElement('dt');
+    const detail = document.createElement('dd');
+    term.textContent = name.replaceAll('_', ' ');
+    detail.textContent = number(value);
     $('feature-values').append(term, detail);
   }
-  $('status').textContent = 'Assessment complete. Select a map point for details.';
+
+  $('status').textContent = area
+    ? 'Assessment complete. Select a map point for details.'
+    : 'Assessment complete.';
   draw();
 }
+
 async function poll(id, version) {
   if (activeJob !== id || revision !== version) return;
   try {
     const job = await api(`/api/jobs/${id}`);
     if (activeJob !== id || revision !== version) return;
     error('');
-    if (job.status === 'running') { setTimeout(() => poll(id, version), 600); return; }
-    activeJob = null; setBusy(false);
-    if (job.status === 'complete') showResult(job.result);
-    else if (job.status === 'cancelled') $('status').textContent = 'Analysis cancelled. Ready when you are.';
-    else { error(job.error); $('status').textContent = 'Analysis unavailable.'; }
+    if (job.status === 'running') {
+      setTimeout(() => poll(id, version), 600);
+      return;
+    }
+    activeJob = null;
+    setBusy(false);
+    if (job.status === 'complete') {
+      showResult(job.result);
+    } else if (job.status === 'cancelled') {
+      $('status').textContent = 'Analysis cancelled. Ready when you are.';
+    } else {
+      error(job.error || 'Analysis unavailable.');
+      $('status').textContent = 'Analysis unavailable.';
+    }
   } catch (exc) {
     if (activeJob !== id || revision !== version) return;
     if (exc.status && exc.status < 500) {
-      activeJob = null; setBusy(false); error(exc.message);
-      $('status').textContent = 'Analysis unavailable. Reload the page if the server restarted.';
+      activeJob = null;
+      setBusy(false);
+      error(exc.message);
+      $('status').textContent = 'Analysis unavailable. Reload if the server restarted.';
       return;
     }
-    // Retain the job ID and cancel button; a lost response doesn't stop the worker.
     error('Connection interrupted. Retrying; you can still cancel the analysis.');
     setTimeout(() => poll(id, version), 2000);
   }
 }
+
 $('analysis-form').addEventListener('submit', async event => {
-  event.preventDefault(); if (busy) return;
+  event.preventDefault();
+  if (busy) return;
   let request;
-  try { request = selection(); } catch (exc) { error(exc.message); return; }
-  clearResult(); draw(); const version = revision;
+  try {
+    request = selection();
+  } catch (exc) {
+    error(exc.message);
+    return;
+  }
+
+  clearResult();
+  draw();
+  const version = revision;
   setBusy(true);
   try {
     const job = await api('/api/jobs', request);
-    activeJob = job.id; $('cancel').disabled = false;
+    activeJob = job.id;
+    $('cancel').disabled = false;
     poll(job.id, version);
-  } catch (exc) { setBusy(false); error(exc.message); $('status').textContent = 'Could not start analysis.'; }
+  } catch (exc) {
+    setBusy(false);
+    error(exc.message);
+    $('status').textContent = 'Could not start analysis.';
+  }
 });
+
 $('cancel').addEventListener('click', async () => {
   if (!activeJob) return;
   const id = activeJob;
-  const version = ++revision; // Invalidate in-flight results immediately on cancellation intent.
+  const version = ++revision;
   $('cancel').disabled = true;
   try {
     await api(`/api/jobs/${id}/cancel`, {});
     if (activeJob !== id) return;
-    revision++; activeJob = null; setBusy(false); error('');
+    revision += 1;
+    activeJob = null;
+    setBusy(false);
+    error('');
     $('status').textContent = 'Analysis cancelled. Ready when you are.';
   } catch (exc) {
     error(`Could not cancel: ${exc.message}`);
@@ -189,42 +561,429 @@ $('cancel').addEventListener('click', async () => {
     }
   }
 });
+
 $('export').addEventListener('click', () => {
   if (!result) return;
-  const payload = {...result, note: 'Suitability is relative, not a probability of species presence.'};
-  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'}));
-  const link = document.createElement('a'); link.href = url; link.download = `wild-locate-${result.species.toLowerCase().replaceAll(' ', '-')}.json`; link.click();
+  const payload = {
+    ...result,
+    note: 'Suitability is relative, not a probability of species presence.',
+  };
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'})
+  );
+  const link = document.createElement('a');
+  link.href = url;
+  link.download =
+    `wild-locate-${result.species.toLowerCase().replaceAll(' ', '-')}.json`;
+  link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
+
 $('point-mode').addEventListener('click', () => mode(false));
 $('area-mode').addEventListener('click', () => mode(true));
-$('region').addEventListener('change', changeRegion);
+$('region').addEventListener('change', () => changeRegion(true));
 $('species').addEventListener('change', () => changed());
 $('radius').addEventListener('change', () => changed(true));
 for (const id of ['latitude', 'longitude']) {
   $(id).addEventListener('input', () => changed());
   $(id).addEventListener('change', () => draw(true));
 }
-$('reset-map').addEventListener('click', () => { if (config && map) map.setView(config.regions.find(r => r.code === $('region').value).center, 7); });
-async function init() {
-  if (window.L) {
-    map = L.map('map', {scrollWheelZoom: false, minZoom: 3, maxZoom: 18}).setView([42.37, -72.28], 9);
-    overlay = L.layerGroup().addTo(map);
-    const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, noWrap: true, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
-    tiles.on('tileerror', () => { $('map-status').hidden = false; $('map-status').textContent = 'Map tiles are unavailable. You can still enter coordinates and analyze habitat.'; });
-    map.on('click', event => {
-      if (busy) return;
-      $('latitude').value = event.latlng.lat.toFixed(6); $('longitude').value = event.latlng.wrap().lng.toFixed(6); changed();
-    });
-    new ResizeObserver(() => map.invalidateSize({pan: false})).observe($('map'));
+$('reset-map').addEventListener('click', () => {
+  if (!config || !map) return;
+  const state = config.regions.find(item => item.code === $('region').value);
+  if (state) map.setView(state.center, 7);
+});
+
+function managerTab(tab) {
+  const models = tab === 'models';
+  $('models-tab').setAttribute('aria-selected', String(models));
+  $('train-tab').setAttribute('aria-selected', String(!models));
+  $('models-panel').hidden = !models;
+  $('train-panel').hidden = models;
+}
+
+$('models-tab').addEventListener('click', () => managerTab('models'));
+$('train-tab').addEventListener('click', () => managerTab('train'));
+
+function reviewStat(title, value) {
+  const box = document.createElement('div');
+  box.className = 'review-stat';
+  const caption = document.createElement('span');
+  caption.textContent = title;
+  const strong = document.createElement('strong');
+  strong.textContent = value;
+  box.append(caption, strong);
+  return box;
+}
+
+function renderModelReview() {
+  const record = modelRecords.find(item => item.id === selectedModelId);
+  $('review-details').replaceChildren();
+  $('model-message').hidden = true;
+
+  if (!record) {
+    $('review-species').textContent = modelRecords.length ? 'Select a model' : 'No models found';
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = modelRecords.length
+      ? 'Choose a model to inspect its validation summary.'
+      : 'Train a species to create your first custom model.';
+    $('review-details').append(p);
+    $('enable-model').disabled = true;
+    $('retrain-model').disabled = true;
+    $('delete-model').disabled = true;
+    return;
+  }
+
+  $('review-species').textContent = record.species;
+  $('review-details').append(
+    reviewStat('Source', record.source),
+    reviewStat('Status', record.enabled ? 'Enabled' : (record.custom ? 'Ready for review' : 'Available'))
+  );
+
+  if (!record.details_error) {
+    $('review-details').append(
+      reviewStat('Selected model', record.model || '—'),
+      reviewStat(
+        'Training locations',
+        `${Number(record.presence_count || 0).toLocaleString()} observations + ${Number(record.background_count || 0).toLocaleString()} background`
+      ),
+      reviewStat('Spatial validation', record.folds ? `${record.folds} folds` : '—'),
+      reviewStat('Mean ROC-AUC', Number.isFinite(record.roc_auc) ? record.roc_auc.toFixed(3) : '—'),
+      reviewStat('Mean PR-AUC', Number.isFinite(record.pr_auc) ? record.pr_auc.toFixed(3) : '—'),
+      reviewStat('PR reference', Number.isFinite(record.pr_reference) ? record.pr_reference.toFixed(3) : '—')
+    );
+    const note = document.createElement('p');
+    note.className = 'review-note';
+    note.textContent = record.experimental
+      ? 'Validation did not consistently outperform the simple references. Treat this model as experimental.'
+      : 'ROC-AUC measures separation from background. PR-AUC summarizes precision and recall and depends on sampling balance; neither metric establishes presence probability.';
+    $('review-details').append(note);
   } else {
-    $('map-status').hidden = false; $('map-status').textContent = 'Map unavailable. Use manual coordinates below the location selector.';
-    document.querySelector('.manual').open = true;
+    const note = document.createElement('p');
+    note.className = 'review-note';
+    note.textContent = 'Validation details are unavailable. Check the saved model files.';
+    $('review-details').append(note);
+  }
+
+  $('enable-model').disabled = record.enabled;
+  $('retrain-model').disabled = false;
+  $('delete-model').disabled = !record.custom;
+}
+
+function renderModels(selectId = null) {
+  if (selectId) selectedModelId = selectId;
+  if (!modelRecords.some(item => item.id === selectedModelId)) {
+    selectedModelId = modelRecords[0]?.id || null;
+  }
+
+  $('model-list').replaceChildren();
+  for (const record of modelRecords) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'model-row';
+    row.setAttribute('aria-selected', String(record.id === selectedModelId));
+    const name = document.createElement('strong');
+    name.textContent = record.species;
+    const meta = document.createElement('span');
+    const status = record.enabled
+      ? 'Enabled'
+      : (record.custom ? 'Ready for review' : 'Available');
+    const created = record.created_at
+      ? ` · ${record.created_at.slice(0, 10)}`
+      : '';
+    meta.textContent = `${record.source} · ${status}${created}`;
+    row.append(name, meta);
+    row.addEventListener('click', () => {
+      selectedModelId = record.id;
+      renderModels();
+    });
+    $('model-list').append(row);
+  }
+
+  renderModelReview();
+}
+
+async function loadModels(selectId = null) {
+  try {
+    const data = await api(`/api/models?region=${encodeURIComponent(managerRegion)}`);
+    modelRecords = data.models || [];
+    renderModels(selectId);
+  } catch (exc) {
+    modelRecords = [];
+    selectedModelId = null;
+    renderModels();
+    $('model-message').textContent = exc.message;
+    $('model-message').hidden = false;
+  }
+}
+
+async function openManager() {
+  if (busy) return;
+  managerRegion = $('region').value;
+  const state = config.regions.find(item => item.code === managerRegion);
+  $('manager-subtitle').textContent =
+    `Train, review, and enable habitat models for ${state?.name || managerRegion} mammals.`;
+  managerTab('models');
+  resetTrainingUi();
+  await loadModels();
+  $('species-dialog').showModal();
+}
+
+$('manage-species').addEventListener('click', openManager);
+
+async function closeManager() {
+  if (trainingState?.status === 'running') {
+    const stop = window.confirm('Cancel the current training operation and close?');
+    if (!stop) return;
+    await cancelTraining();
+  }
+  $('species-dialog').close();
+}
+
+$('close-manager').addEventListener('click', closeManager);
+$('species-dialog').addEventListener('cancel', event => {
+  if (trainingState?.status === 'running') {
+    event.preventDefault();
+    closeManager();
+  }
+});
+
+$('enable-model').addEventListener('click', async () => {
+  const record = modelRecords.find(item => item.id === selectedModelId);
+  if (!record || record.enabled) return;
+  try {
+    await api('/api/models/enable', {id: record.id});
+    await refreshConfig(true);
+    await loadModels(record.id);
+    $('model-message').textContent =
+      `${record.species} is now available in the analysis dropdown.`;
+    $('model-message').hidden = false;
+  } catch (exc) {
+    $('model-message').textContent = exc.message;
+    $('model-message').hidden = false;
+  }
+});
+
+$('delete-model').addEventListener('click', async () => {
+  const record = modelRecords.find(item => item.id === selectedModelId);
+  if (!record?.custom) return;
+  if (!window.confirm(`Delete the saved model for ${record.species}? This cannot be undone.`)) {
+    return;
   }
   try {
-    config = await api('/api/config'); token = config.token;
-    $('region').replaceChildren(...config.regions.map(state => new Option(state.name, state.code)));
-    $('inputs').disabled = false; changeRegion();
-  } catch (exc) { error('Could not connect to Wild-Locate. Check that the terminal server is still running, then reload this page.'); }
+    await api('/api/models/delete', {id: record.id});
+    await refreshConfig(true);
+    await loadModels();
+  } catch (exc) {
+    $('model-message').textContent = exc.message;
+    $('model-message').hidden = false;
+  }
+});
+
+$('retrain-model').addEventListener('click', () => {
+  const record = modelRecords.find(item => item.id === selectedModelId);
+  if (!record) return;
+  managerTab('train');
+  $('training-query').value = record.species;
+  startTrainingResolve();
+});
+
+function resetTrainingUi() {
+  trainingJobId = null;
+  trainingState = null;
+  resolvedTaxon = null;
+  handledCompletionId = null;
+  trainingRevision += 1;
+  $('training-query').disabled = false;
+  $('find-species').disabled = false;
+  $('training-match').hidden = true;
+  $('prepare-training').hidden = true;
+  $('download-environment').hidden = true;
+  $('start-training').hidden = true;
+  $('cancel-training').hidden = true;
+  $('training-status').textContent = 'Choose a species to begin.';
+  $('training-summary').textContent =
+    'Training needs at least 25 cleaned observations and uses spatial cross-validation.';
+  $('training-error').hidden = true;
+  $('training-log').hidden = true;
+  $('training-log-text').textContent = '';
 }
+
+function trainingBusy(value) {
+  $('training-query').disabled = value;
+  $('find-species').disabled = value;
+  $('cancel-training').hidden = !value;
+  if (value) {
+    $('prepare-training').hidden = true;
+    $('download-environment').hidden = true;
+    $('start-training').hidden = true;
+  }
+}
+
+async function handleTrainingCompletion(job) {
+  const modelId = job.result?.model_id;
+  if (!modelId || handledCompletionId === modelId) return;
+  handledCompletionId = modelId;
+  await refreshConfig(true);
+  await loadModels(modelId);
+  $('model-message').textContent =
+    'Training complete. Review the validation results, then enable the model when ready.';
+  $('model-message').hidden = false;
+  managerTab('models');
+}
+
+function renderTraining(job) {
+  trainingState = job;
+  $('training-status').textContent = job.message || 'Working…';
+  $('training-error').hidden = true;
+
+  const logs = job.logs || [];
+  $('training-log').hidden = !logs.length;
+  $('training-log-text').textContent = logs.join('\n');
+
+  if (job.status === 'running') {
+    trainingBusy(true);
+    return;
+  }
+
+  trainingBusy(false);
+  $('prepare-training').hidden = true;
+  $('download-environment').hidden = true;
+  $('start-training').hidden = true;
+
+  if (job.status === 'resolved') {
+    resolvedTaxon = job.result;
+    $('training-match').textContent =
+      `${job.result.common_name} (${job.result.scientific_name}) · Mammal species · ${config.regions.find(item => item.code === managerRegion)?.name || managerRegion} observations only`;
+    $('training-match').hidden = false;
+    $('prepare-training').hidden = false;
+  } else if (job.status === 'prepared') {
+    $('training-match').hidden = false;
+    $('training-summary').textContent =
+      `${Number(job.result.cleaned_count).toLocaleString()} usable observations from ${Number(job.result.raw_count).toLocaleString()} downloaded records. Environmental data is available; spatial coverage will be checked during training.`;
+    $('start-training').hidden = false;
+  } else if (job.status === 'initialized') {
+    $('training-summary').textContent =
+      'Environmental datasets are ready. Confirm the species and check its observations again.';
+    $('prepare-training').hidden = !resolvedTaxon;
+  } else if (job.status === 'completed') {
+    $('training-summary').textContent =
+      'Training complete. The model has been saved to your account for review.';
+    handleTrainingCompletion(job);
+  } else if (job.status === 'cancelled') {
+    $('training-summary').textContent =
+      'Training cancelled. Your enabled models were not changed.';
+  } else if (job.status === 'error') {
+    $('training-error').textContent = job.error || 'Training failed.';
+    $('training-error').hidden = false;
+    if (job.code === 'missing_environment') {
+      $('download-environment').hidden = false;
+    } else if (resolvedTaxon) {
+      $('prepare-training').hidden = false;
+    }
+  }
+}
+
+async function pollTraining(id, version) {
+  if (trainingJobId !== id || trainingRevision !== version) return;
+  try {
+    const job = await api(`/api/training/${id}`);
+    if (trainingJobId !== id || trainingRevision !== version) return;
+    renderTraining(job);
+    if (job.status === 'running') {
+      setTimeout(() => pollTraining(id, version), 700);
+    }
+  } catch (exc) {
+    if (trainingJobId !== id || trainingRevision !== version) return;
+    trainingBusy(false);
+    $('training-error').textContent = exc.message;
+    $('training-error').hidden = false;
+  }
+}
+
+async function startTrainingResolve() {
+  const query = $('training-query').value.trim();
+  if (!query) return;
+  trainingRevision += 1;
+  const version = trainingRevision;
+  resolvedTaxon = null;
+  handledCompletionId = null;
+  $('training-match').hidden = true;
+  $('training-error').hidden = true;
+  trainingBusy(true);
+  $('training-status').textContent = 'Finding the species on iNaturalist…';
+  try {
+    const job = await api('/api/training/start', {
+      region: managerRegion,
+      query,
+    });
+    trainingJobId = job.id;
+    renderTraining(job);
+    pollTraining(job.id, version);
+  } catch (exc) {
+    trainingBusy(false);
+    $('training-error').textContent = exc.message;
+    $('training-error').hidden = false;
+  }
+}
+
+$('training-form').addEventListener('submit', event => {
+  event.preventDefault();
+  startTrainingResolve();
+});
+
+async function trainingAction(action) {
+  if (!trainingJobId) return;
+  trainingRevision += 1;
+  const version = trainingRevision;
+  try {
+    const job = await api(
+      `/api/training/${trainingJobId}/action`,
+      {action}
+    );
+    renderTraining(job);
+    pollTraining(trainingJobId, version);
+  } catch (exc) {
+    trainingBusy(false);
+    $('training-error').textContent = exc.message;
+    $('training-error').hidden = false;
+  }
+}
+
+$('prepare-training').addEventListener('click', () => trainingAction('prepare'));
+$('download-environment').addEventListener('click', () => trainingAction('initialize'));
+$('start-training').addEventListener('click', () => trainingAction('train'));
+
+async function cancelTraining() {
+  if (!trainingJobId) return;
+  trainingRevision += 1;
+  try {
+    const job = await api(`/api/training/${trainingJobId}/cancel`, {});
+    renderTraining(job);
+  } catch (exc) {
+    $('training-error').textContent = exc.message;
+    $('training-error').hidden = false;
+  }
+}
+
+$('cancel-training').addEventListener('click', cancelTraining);
+
+async function init() {
+  try {
+    const data = await api('/api/config');
+    config = data;
+    token = data.token;
+    if (data.authenticated) {
+      enterApp(false);
+    } else {
+      setAuthMode(false);
+      showAuth();
+    }
+  } catch (_) {
+    $('auth-screen').hidden = false;
+    authError('Could not connect to Wild-Locate. Check that the terminal server is still running, then reload this page.');
+  }
+}
+
 init();
