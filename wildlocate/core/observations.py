@@ -537,32 +537,3 @@ def generate_background(
     training_df.to_csv(training_file, index=False)
 
     return sample_df
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Generate target-group background points for a species in Massachusetts.",
-    )
-    parser.add_argument("--species", required=True, help="Species name, e.g. 'Fisher'.")
-    parser.add_argument("--background-ratio", type=float, default=3.0)
-    parser.add_argument("--exclusion-distance-m", type=float, default=1000)
-    parser.add_argument("--thinning-distance-m", type=float, default=500)
-    parser.add_argument("--refresh-pool", action="store_true")
-    args = parser.parse_args()
-
-    load_or_create_mammal_pool(refresh_pool=args.refresh_pool)
-
-    background_df = generate_background(
-        args.species,
-        background_ratio=args.background_ratio,
-        exclusion_distance_m=args.exclusion_distance_m,
-        thinning_distance_m=args.thinning_distance_m,
-    )
-
-    species_slug_value = species_slug(args.species)
-    background_file = Path(f"data/processed/samples/{species_slug_value}_background.csv")
-    training_file = Path(f"data/processed/samples/{species_slug_value}_training_points.csv")
-
-    print(f"Background points saved to: {background_file}")
-    print(f"Training points saved to: {training_file}")
-    print(f"Background rows: {len(background_df)}")
