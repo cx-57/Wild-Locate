@@ -198,9 +198,10 @@
             <h3>Find a species</h3>
             <p class="hint">Enter a mammal or reptile common or scientific name.</p>
             <form id="training-form" class="inline-form">
-              <input id="training-query" maxlength="100" placeholder="e.g. American Black Bear" required>
+              <input id="training-query" maxlength="100" placeholder="e.g. alligator, fox, black bear" required>
               <button id="find-species" class="secondary" type="submit">Find species</button>
             </form>
+            <div id="training-suggestions" class="species-suggestions" hidden></div>
             <div id="training-match" class="match-card" hidden></div>
           </div>
         </div>
