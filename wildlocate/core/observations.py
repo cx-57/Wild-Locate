@@ -11,6 +11,7 @@ from pyproj import Transformer
 API_BASE = "https://api.inaturalist.org/v1"
 DEFAULT_MAX_OBSERVATIONS = 5000
 DEFAULT_MAX_BACKGROUND_POOL = 8000
+MIN_BACKGROUND_POINTS = 25
 OBSERVATION_COLUMNS = [
     "observation_id",
     "observed_on",
@@ -75,7 +76,7 @@ def find_place_id(place_name):
 
 
 def species_suggestions(query, place_name, limit=3):
-    """Return up to limit trainable mammal/reptile species observed in a place."""
+    """Return up to limit in-region mammal/reptile species containing the query."""
     if query is None or not str(query).strip():
         raise ValueError("Species search is required.")
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 10:
@@ -84,10 +85,26 @@ def species_suggestions(query, place_name, limit=3):
     query = str(query).strip()
     normalized_query = normalize_name(query)
     place_id = find_place_id(place_name)
-    data = api_get("/taxa/autocomplete", {"q": query, "per_page": 30})
-    candidates = []
 
-    for taxon in data.get("results", [])[:12]:
+    # Autocomplete is useful for exact/common queries, while /taxa is broader
+    # and finds species such as "White-tailed Deer" from the query "deer".
+    search_results = []
+    seen_ids = set()
+    searches = (
+        ("/taxa/autocomplete", {"q": query, "per_page": 100}),
+        ("/taxa", {"q": query, "rank": "species", "per_page": 100}),
+    )
+    for endpoint, params in searches:
+        data = api_get(endpoint, params)
+        for taxon in data.get("results", []):
+            taxon_id = taxon.get("id")
+            if taxon_id is None or taxon_id in seen_ids:
+                continue
+            seen_ids.add(taxon_id)
+            search_results.append(taxon)
+
+    textual_matches = []
+    for taxon in search_results:
         if taxon.get("rank") != "species":
             continue
         if taxon.get("iconic_taxon_name") not in {"Mammalia", "Reptilia"}:
@@ -95,12 +112,26 @@ def species_suggestions(query, place_name, limit=3):
 
         common_name = taxon.get("preferred_common_name") or taxon.get("common_name") or ""
         scientific_name = taxon.get("scientific_name") or taxon.get("name") or ""
-        names = [normalize_name(common_name), normalize_name(scientific_name)]
-        if normalized_query and not any(normalized_query in name for name in names):
+        normalized_common = normalize_name(common_name)
+        normalized_scientific = normalize_name(scientific_name)
+        if normalized_query not in normalized_common and normalized_query not in normalized_scientific:
             continue
         if not common_name or not scientific_name:
             continue
 
+        # Prefer common-name matches, then shorter names; state abundance is
+        # applied after we verify that the species actually occurs in the region.
+        text_priority = (
+            0 if normalized_common == normalized_query else
+            1 if normalized_common.startswith(normalized_query) else
+            2 if normalized_query in normalized_common else
+            3
+        )
+        textual_matches.append((text_priority, len(normalized_common), taxon))
+
+    textual_matches.sort(key=lambda item: (item[0], item[1]))
+    candidates = []
+    for text_priority, _name_length, taxon in textual_matches[:30]:
         observation_data = api_get(
             "/observations",
             {
@@ -116,6 +147,8 @@ def species_suggestions(query, place_name, limit=3):
         if observation_count <= 0:
             continue
 
+        common_name = taxon.get("preferred_common_name") or taxon.get("common_name") or ""
+        scientific_name = taxon.get("scientific_name") or taxon.get("name") or ""
         candidates.append(
             {
                 "taxon_id": int(taxon["id"]),
@@ -124,13 +157,20 @@ def species_suggestions(query, place_name, limit=3):
                 "rank": "species",
                 "iconic_taxon_name": taxon.get("iconic_taxon_name"),
                 "observation_count": observation_count,
+                "_text_priority": text_priority,
             }
         )
-        if len(candidates) >= limit:
-            break
 
-    return candidates
-
+    candidates.sort(
+        key=lambda item: (
+            item["_text_priority"],
+            -item["observation_count"],
+            len(normalize_name(item["common_name"])),
+        )
+    )
+    for item in candidates:
+        item.pop("_text_priority", None)
+    return candidates[:limit]
 
 def resolve_species(species_name):
     if species_name is None or not species_name.strip():
@@ -496,7 +536,7 @@ def spatial_thin(df, thinning_distance_m, random_state):
 
 def generate_background(
     species_name,
-    background_ratio=3.0,
+    background_ratio=1.0,
     exclusion_distance_m=1000,
     thinning_distance_m=500,
     random_state=42,
@@ -570,12 +610,19 @@ def generate_background(
         random_state,
     )
 
-    required_background = int(round(len(presence_df) * background_ratio))
-
-    if len(thinned_candidates) < required_background:
+    desired_background = max(
+        MIN_BACKGROUND_POINTS,
+        int(round(len(presence_df) * background_ratio)),
+    )
+    if len(thinned_candidates) < MIN_BACKGROUND_POINTS:
         raise RuntimeError(
-            f"Too few candidate background points remain after filtering and thinning: {len(thinned_candidates)} available, {required_background} required."
+            f"Too few candidate background points remain after filtering and thinning: "
+            f"{len(thinned_candidates)} available, at least {MIN_BACKGROUND_POINTS} required."
         )
+
+    # Do not fail just because the target-group pool cannot supply a full 1:1
+    # sample. Use every valid thinned candidate instead.
+    required_background = min(desired_background, len(thinned_candidates))
 
     rng = np.random.default_rng(random_state)
     sample_indices = rng.choice(len(thinned_candidates), size=required_background, replace=False)
