@@ -26,7 +26,7 @@ from wildlocate.core.regions import REGIONS, get_region
 from wildlocate.core.registry import cleanup_job
 
 ROOT = Path(__file__).resolve().parent
-VENDOR = ROOT.parent / "gui" / "map" / "vendor"
+VENDOR = ROOT.parent / "gui"
 ASSETS = {
     "/": ROOT / "index.html",
     "/style.css": ROOT / "style.css",
