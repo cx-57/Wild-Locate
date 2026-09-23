@@ -16,7 +16,7 @@ SUPPORTED_TARGET_GROUPS = {"Mammalia": "mammal", "Reptilia": "reptile"}
 
 class TrainingSession:
     def __init__(self, job_id, progress=lambda message: None, region="MA", max_observations=5000, *, username=None):
-        from wildlocate.core.regions import get_region
+        from wildlocate.core.regional import get_region
         self.region = get_region(region)
         self.max_observations = max_observations
         self.job_id = job_id
@@ -111,7 +111,7 @@ class TrainingSession:
         target_group = self.taxon["iconic_taxon_name"]
         group_label = SUPPORTED_TARGET_GROUPS[target_group]
         pool = self.workspace / f"{group_label}_pool.csv"
-        from wildlocate.core.regions import region_root
+        from wildlocate.core.regional import region_root
         region_slug = self.region.name.lower().replace(" ", "_")
         cached_pool = (
             region_root(self.region)
