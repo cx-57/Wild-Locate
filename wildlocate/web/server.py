@@ -14,7 +14,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
-from wildlocate.core.accounts import authenticate
+from wildlocate.core.registry import authenticate
 from wildlocate.core.registry import (
     available_models,
     available_species,
