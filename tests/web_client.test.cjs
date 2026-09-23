@@ -118,3 +118,72 @@ test('A missing job releases controls instead of polling forever',async()=>{
   assert.equal(b.get('cancel').hidden,true);
   assert.match(b.get('error').textContent,/not found/i);
 });
+
+test('Partial species search renders state-valid suggestions before training',async()=>{
+  const b=await browser();
+  b.get('training-query').value='alligator';
+  b.run("managerRegion='FL'");
+
+  const suggestions={
+    region:'FL',
+    region_name:'Florida',
+    suggestions:[
+      {
+        taxon_id:1,
+        common_name:'American Alligator',
+        scientific_name:'Alligator mississippiensis',
+        iconic_taxon_name:'Reptilia',
+        observation_count:1500,
+      },
+      {
+        taxon_id:2,
+        common_name:'Example Alligator',
+        scientific_name:'Alligator example',
+        iconic_taxon_name:'Reptilia',
+        observation_count:25,
+      },
+    ],
+  };
+
+  b.context.fetch=async(path,options)=>{
+    if(path==='/api/species/suggestions') return response(suggestions);
+    if(path==='/api/training/start') {
+      const body=JSON.parse(options.body);
+      assert.equal(body.query,'Alligator mississippiensis');
+      return response({
+        id:'training-1',
+        status:'resolved',
+        message:'Species found.',
+        logs:[],
+        result:{
+          common_name:'American Alligator',
+          scientific_name:'Alligator mississippiensis',
+          iconic_taxon_name:'Reptilia',
+        },
+      });
+    }
+    if(path==='/api/training/training-1') {
+      return response({status:'resolved',logs:[],result:{
+        common_name:'American Alligator',
+        scientific_name:'Alligator mississippiensis',
+        iconic_taxon_name:'Reptilia',
+      }});
+    }
+    throw Error('Unexpected request: '+path);
+  };
+
+  await b.get('training-form').handlers.submit({preventDefault(){}});
+  assert.equal(b.get('training-suggestions').hidden,false);
+  assert.equal(b.get('training-suggestions').children.length,2);
+  assert.equal(
+    b.get('training-suggestions').children[0].children[0].textContent,
+    'American Alligator'
+  );
+
+  b.get('training-suggestions').children[0].click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(b.get('training-query').value,'American Alligator');
+  assert.equal(b.get('training-match').hidden,false);
+  assert.match(b.get('training-match').textContent,/American Alligator/);
+});
+
