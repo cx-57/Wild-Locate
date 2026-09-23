@@ -45,11 +45,11 @@ def cmd_gui(args):
 
 def cmd_init(args):
     if getattr(args, "region", "MA") != "MA":
-        from wildlocate.core.data.regional import initialize
+        from wildlocate.core.regional import initialize
         initialize(args.region)
         return
-    from wildlocate.core.data.environment import get_user_data_dir
-    from wildlocate.core.data.downloads import (
+    from wildlocate.core.environment import get_user_data_dir
+    from wildlocate.core.environment import (
         download_elevation, download_hydrography, download_nlcd, download_roads,
     )
     data_dir = get_user_data_dir()
@@ -95,7 +95,7 @@ def cmd_status(args):
         print(f"Enabled species: {', '.join(available_species(region.code)) or 'None — train and enable a model'}")
         print("Missing raster tiles download on demand; internet access is required for uncached locations.")
         return
-    from wildlocate.core.data.environment import DatasetPaths
+    from wildlocate.core.environment import DatasetPaths
     paths = DatasetPaths()
     datasets = {
         "NLCD land cover": paths.nlcd_landcover,
