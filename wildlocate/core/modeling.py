@@ -718,8 +718,6 @@ class TrainingSession:
     def train(self):
         from wildlocate.core.observations import generate_background
         from wildlocate.core.observations import species_slug
-        from wildlocate.core.modeling import build_species_dataset
-        from wildlocate.core.modeling import train_species
         if self.prepared is None or self.taxon is None:
             raise ValueError("Check species data before starting training.")
         name = self.taxon["common_name"]
