@@ -19,7 +19,7 @@ from wildlocate.core.registry import available_species
 ROOT = Path(__file__).resolve().parent
 VENDOR = ROOT.parent / 'gui' / 'map' / 'vendor'
 ASSETS = {'/': ROOT / 'index.html', '/style.css': ROOT / 'style.css', '/app.js': ROOT / 'app.js'}
-for name in ('leaflet.js', 'leaflet.css', 'LICENSE'):
+for name in ('leaflet.js', 'leaflet.css'):
     ASSETS['/vendor/' + name] = VENDOR / name
 
 
