@@ -147,12 +147,18 @@ press **Ctrl+C** to stop the server and any active analysis. To choose another
 port or skip automatically opening the browser, use
 `wildlocate web --port 8766 --no-browser`.
 
-Choose a bundled species, click the map or enter coordinates, and run a point
-analysis or an area analysis with a 10/25/50 km radius. The browser uses your
-existing local datasets and models. Map tiles require internet access; manual
-coordinates and local scoring still work without them. The score table is
-collapsible and results can be exported as JSON. Cancel stops the worker process.
+Sign in with the same local account system used by the desktop app. From the
+browser you can manage species models, review validation metrics, train a new
+mammal model, enable a saved custom model, and delete custom models. The selected
+account is also passed to habitat prediction so enabled custom models appear in
+the normal species dropdown.
 
-This first browser version supports bundled models. Account management, custom
-models, and training remain in the desktop app (`wildlocate`). The web server is
-local to this computer; it is not a hosted public website.
+Click the map or enter coordinates, then run a point analysis or an area analysis
+with a 10/25/50 km radius. The browser uses your existing local datasets and
+models. It uses a CARTO/OpenStreetMap basemap with an automatic fallback; manual
+coordinates and local scoring still work if map tiles are unavailable. The score
+table is collapsible, results can be exported as JSON, and active analysis or
+training can be cancelled.
+
+The web server binds only to this computer at `127.0.0.1`; it is not a hosted
+public website.
