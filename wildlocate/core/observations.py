@@ -10,6 +10,7 @@ from pyproj import Transformer
 
 API_BASE = "https://api.inaturalist.org/v1"
 DEFAULT_MAX_OBSERVATIONS = 5000
+DEFAULT_MAX_BACKGROUND_POOL = 8000
 OBSERVATION_COLUMNS = [
     "observation_id",
     "observed_on",
@@ -71,6 +72,64 @@ def find_place_id(place_name):
             return int(result["id"])
 
     return int(results[0]["id"])
+
+
+def species_suggestions(query, place_name, limit=3):
+    """Return up to limit trainable mammal/reptile species observed in a place."""
+    if query is None or not str(query).strip():
+        raise ValueError("Species search is required.")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 10:
+        raise ValueError("Suggestion limit must be between 1 and 10.")
+
+    query = str(query).strip()
+    normalized_query = normalize_name(query)
+    place_id = find_place_id(place_name)
+    data = api_get("/taxa/autocomplete", {"q": query, "per_page": 30})
+    candidates = []
+
+    for taxon in data.get("results", [])[:12]:
+        if taxon.get("rank") != "species":
+            continue
+        if taxon.get("iconic_taxon_name") not in {"Mammalia", "Reptilia"}:
+            continue
+
+        common_name = taxon.get("preferred_common_name") or taxon.get("common_name") or ""
+        scientific_name = taxon.get("scientific_name") or taxon.get("name") or ""
+        names = [normalize_name(common_name), normalize_name(scientific_name)]
+        if normalized_query and not any(normalized_query in name for name in names):
+            continue
+        if not common_name or not scientific_name:
+            continue
+
+        observation_data = api_get(
+            "/observations",
+            {
+                "taxon_id": int(taxon["id"]),
+                "place_id": place_id,
+                "quality_grade": "research",
+                "verifiable": "true",
+                "captive": "false",
+                "per_page": 1,
+            },
+        )
+        observation_count = int(observation_data.get("total_results", 0) or 0)
+        if observation_count <= 0:
+            continue
+
+        candidates.append(
+            {
+                "taxon_id": int(taxon["id"]),
+                "scientific_name": scientific_name,
+                "common_name": common_name,
+                "rank": "species",
+                "iconic_taxon_name": taxon.get("iconic_taxon_name"),
+                "observation_count": observation_count,
+            }
+        )
+        if len(candidates) >= limit:
+            break
+
+    return candidates
 
 
 def resolve_species(species_name):
@@ -259,7 +318,6 @@ BACKGROUND_POOL_COLUMNS = (
     "latitude", "longitude", "positional_accuracy", "observed_on",
     "coordinates_obscured",
 )
-DEFAULT_MAX_BACKGROUND_POOL = 20000
 
 
 def target_group_label(target_group):
@@ -276,6 +334,9 @@ def download_target_group_pool(
     group = TARGET_GROUPS.get(target_group)
     if group is None:
         raise ValueError(f"Unsupported target group: {target_group}")
+    if isinstance(max_observations, bool) or not isinstance(max_observations, int) or max_observations <= 0:
+        raise ValueError("max_observations must be a positive integer.")
+    max_observations = min(max_observations, DEFAULT_MAX_BACKGROUND_POOL)
 
     place_id = find_place_id(place_name)
     rows = []
@@ -344,6 +405,11 @@ def load_or_create_target_group_pool(
                 f"Existing {label} pool at {pool_file} is missing required columns: "
                 f"{sorted(missing)}"
             )
+        if len(pool_df) > DEFAULT_MAX_BACKGROUND_POOL:
+            pool_df = pool_df.sample(
+                n=DEFAULT_MAX_BACKGROUND_POOL, random_state=42
+            ).reset_index(drop=True)
+            pool_df.to_csv(pool_file, index=False)
         return pool_df
 
     pool_df = download_target_group_pool(

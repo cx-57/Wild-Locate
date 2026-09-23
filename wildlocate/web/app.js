@@ -143,16 +143,17 @@ function initMap() {
     return;
   }
 
-  map = L.map('map', {scrollWheelZoom: false, minZoom: 3, maxZoom: 19})
+  map = L.map('map', {scrollWheelZoom: false, minZoom: 3, maxZoom: 18})
     .setView([42.37, -72.28], 9);
   overlay = L.layerGroup().addTo(map);
 
   const tiles = L.tileLayer(
     'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     {
-      maxZoom: 19,
+      maxZoom: 18,
       noWrap: true,
-      attribution: '&copy; OpenStreetMap contributors',
+      keepBuffer: 0,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }
   );
 
@@ -821,6 +822,8 @@ function resetTrainingUi() {
   $('training-query').disabled = false;
   $('find-species').disabled = false;
   $('training-match').hidden = true;
+  $('training-suggestions').hidden = true;
+  $('training-suggestions').replaceChildren();
   $('prepare-training').hidden = true;
   $('download-environment').hidden = true;
   $('start-training').hidden = true;
@@ -926,14 +929,89 @@ async function pollTraining(id, version) {
   }
 }
 
-async function startTrainingResolve() {
+function clearTrainingSuggestions() {
+  $('training-suggestions').hidden = true;
+  $('training-suggestions').replaceChildren();
+}
+
+function renderTrainingSuggestions(data) {
+  const suggestions = data.suggestions || [];
+  const container = $('training-suggestions');
+  container.replaceChildren();
+
+  if (!suggestions.length) {
+    clearTrainingSuggestions();
+    $('training-error').textContent =
+      `No mammal or reptile species with research-grade observations in ${data.region_name || managerRegion} matched that search.`;
+    $('training-error').hidden = false;
+    $('training-status').textContent = 'Try a more specific or different animal name.';
+    return;
+  }
+
+  for (const suggestion of suggestions) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'species-suggestion';
+
+    const name = document.createElement('strong');
+    name.textContent = suggestion.common_name;
+    const meta = document.createElement('span');
+    const groupName = suggestion.iconic_taxon_name === 'Reptilia' ? 'Reptile' : 'Mammal';
+    meta.textContent =
+      `${suggestion.scientific_name} · ${groupName} · ${Number(suggestion.observation_count || 0).toLocaleString()} ${data.region_name || managerRegion} observations`;
+
+    button.append(name, meta);
+    button.addEventListener('click', async () => {
+      $('training-query').value = suggestion.common_name;
+      clearTrainingSuggestions();
+      await startTrainingResolve(suggestion.scientific_name);
+    });
+    container.append(button);
+  }
+
+  container.hidden = false;
+  $('training-status').textContent =
+    `Choose one of the ${suggestions.length} matching species.`;
+}
+
+async function searchTrainingSpecies() {
   const query = $('training-query').value.trim();
+  if (!query) return;
+
+  trainingRevision += 1;
+  resolvedTaxon = null;
+  handledCompletionId = null;
+  $('training-match').hidden = true;
+  clearTrainingSuggestions();
+  $('training-error').hidden = true;
+  $('find-species').disabled = true;
+  $('training-status').textContent =
+    `Searching ${config.regions.find(item => item.code === managerRegion)?.name || managerRegion} species…`;
+
+  try {
+    const data = await api('/api/species/suggestions', {
+      region: managerRegion,
+      query,
+    });
+    renderTrainingSuggestions(data);
+  } catch (exc) {
+    $('training-error').textContent = exc.message;
+    $('training-error').hidden = false;
+    $('training-status').textContent = 'Species search failed.';
+  } finally {
+    $('find-species').disabled = false;
+  }
+}
+
+async function startTrainingResolve(queryOverride = null) {
+  const query = queryOverride || $('training-query').value.trim();
   if (!query) return;
   trainingRevision += 1;
   const version = trainingRevision;
   resolvedTaxon = null;
   handledCompletionId = null;
   $('training-match').hidden = true;
+  clearTrainingSuggestions();
   $('training-error').hidden = true;
   trainingBusy(true);
   $('training-status').textContent = 'Finding the species on iNaturalist…';
@@ -952,9 +1030,15 @@ async function startTrainingResolve() {
   }
 }
 
-$('training-form').addEventListener('submit', event => {
+$('training-form').addEventListener('submit', async event => {
   event.preventDefault();
-  startTrainingResolve();
+  await searchTrainingSpecies();
+});
+
+$('training-query').addEventListener('input', () => {
+  if (!trainingState || trainingState.status !== 'running') {
+    clearTrainingSuggestions();
+  }
 });
 
 async function trainingAction(action) {

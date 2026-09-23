@@ -203,6 +203,17 @@ body.busy .status:before{content:"";display:inline-block;width:7px;height:7px;ba
 .training-step h3{font-size:17px;margin-bottom:6px}
 .inline-form{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:13px}
 .inline-form .secondary{width:auto;margin:0}
+.species-suggestions{
+  margin-top:10px;border:1px solid #dce7d7;border-radius:9px;overflow:hidden;background:#fff
+}
+.species-suggestion{
+  width:100%;display:block;text-align:left;background:#fff;color:var(--ink);
+  padding:11px 13px;border:0;border-bottom:1px solid #e8eee4;cursor:pointer
+}
+.species-suggestion:last-child{border-bottom:0}
+.species-suggestion:hover,.species-suggestion:focus-visible{background:#f2f7ee}
+.species-suggestion strong{display:block;font-size:12px}
+.species-suggestion span{display:block;margin-top:3px;font-size:10px;color:var(--muted)}
 .match-card{
   margin-top:12px;padding:13px;border:1px solid #dce7d7;border-radius:9px;
   background:#f4f8f1;font-size:12px;line-height:1.5
