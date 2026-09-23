@@ -1030,9 +1030,9 @@ async function startTrainingResolve(queryOverride = null) {
   }
 }
 
-$('training-form').addEventListener('submit', event => {
+$('training-form').addEventListener('submit', async event => {
   event.preventDefault();
-  searchTrainingSpecies();
+  await searchTrainingSpecies();
 });
 
 $('training-query').addEventListener('input', () => {
