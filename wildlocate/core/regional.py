@@ -5,9 +5,25 @@ models; Massachusetts road/water distances are deliberately not substituted.
 """
 
 from dataclasses import dataclass
+from functools import lru_cache
+import json
+import math
+import os
 from pathlib import Path
+from threading import Lock
+import time
+import uuid
 
+import numpy as np
+import rasterio
+from rasterio.windows import Window
+import requests
+from shapely.geometry import Point, shape
 
+from wildlocate.core.environment import (
+    fraction, project_point, read_local_window, terrain_window_stats,
+    validate_point_is_evaluable,
+)
 @dataclass(frozen=True)
 class Region:
     code: str
@@ -44,25 +60,8 @@ def region_root(region='MA'):
     root = get_user_data_dir()
     return root if code == 'MA' else root / 'regions' / code
 
-from functools import lru_cache
-import json
-import math
-import os
-from pathlib import Path
-from threading import Lock
-import time
-import uuid
 
-import numpy as np
-import rasterio
-from rasterio.windows import Window
-import requests
-from shapely.geometry import Point, shape
 
-from wildlocate.core.environment import (
-    project_point, read_local_window, terrain_window_stats, fraction,
-    validate_point_is_evaluable,
-)
 
 SCHEMA = 'regional-raster-v1'
 TILE_SIZE = 120000
