@@ -414,7 +414,7 @@ try:
 except ImportError:
     QWebEngineView = None
 
-MAP_FILE = Path(__file__).with_name("map") / "index.html"
+MAP_FILE = Path(__file__).with_name("map.html")
 
 
 class MapBridge(QObject):
